@@ -666,12 +666,9 @@ void cb_rx_monitor(ubertooth_t* ut)
 	if (infile == NULL)
 		systime = time(NULL);
 
-	printf("systime=%u ch=%2d LAP=%06x err=%u clkn=%u clk_offset=%u\n",
-		(uint32_t)time(NULL),
-		btbb_packet_get_channel(pkt),
+	printf("LAP=%06x systime=%u ch=%2d \n",
 		btbb_packet_get_lap(pkt),
-		btbb_packet_get_ac_errors(pkt),
-		clkn
+		(uint32_t)time(NULL)
 	);
 
 	/* If dumpfile is specified, write out all banks to the
