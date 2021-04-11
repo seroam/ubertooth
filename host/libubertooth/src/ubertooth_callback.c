@@ -536,7 +536,7 @@ void cb_btle_monitor(ubertooth_t* ut, void* args)
 	printf("\n");
 	*/
 
-	printf("\r%u packets parsed.");
+	printf("\r%u packets parsed.", &packets_received);
 
 	lell_packet_unref(pkt);
 

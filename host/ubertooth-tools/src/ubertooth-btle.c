@@ -355,7 +355,12 @@ int main(int argc, char *argv[])
 			}
 			if (r == sizeof(usb_pkt_rx)) {
 				fifo_push(ut->fifo, &rx);
-				cb_btle(ut, &cb_opts);
+				if (!do_monitor) {
+					cb_btle(ut, &cb_opts);
+				}
+				else {
+					cb_btle_monitor(ut, &cb_opts);
+				}
 			}
 			usleep(500);
 		}
@@ -401,7 +406,7 @@ int main(int argc, char *argv[])
 		cmd_btle_slave(ut->devh, mac_address);
 	}
 
-	if (!(do_follow || do_no_follow || do_promisc || do_get_aa || do_set_aa ||
+	if (!(do_follow || do_no_follow || do_promisc || do_monitor || do_get_aa || do_set_aa ||
 				do_crc >= 0 || do_slave_mode || do_target))
 		usage();
 
