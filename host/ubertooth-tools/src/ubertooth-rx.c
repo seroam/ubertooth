@@ -227,7 +227,7 @@ int main(int argc, char* argv[])
 		// receive and process each packet
 		while(!ut->stop_ubertooth) {
 			if (monitor_mode) {
-				ubertooth_bulk_receive(ut, cb_rx, pn);
+				ubertooth_bulk_receive(ut, cb_rx_monitor, pn);
 			}
 			else {
 				ubertooth_bulk_receive(ut, cb_rx, pn);

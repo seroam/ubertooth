@@ -3,6 +3,7 @@
 *.so.*
 *.pyc
 host/build/*
+host/out/*
 
 # firmware build output
 *.bin
@@ -53,4 +54,4 @@ ID
 *.sublime-project
 *.sublime-workspace
 .vscode
-
+.vs
