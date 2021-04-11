@@ -35,6 +35,7 @@ static void usage()
 	printf("\tubertooth-rx -l <lap> -- calculate UAP for a given LAP\n");
 	printf("\tubertooth-rx -l <lap> -u <uap> -- calculate clock and follow piconet\n");
 	printf("\tubertooth-rx -z -t 20 -- survey mode: discover all LAPs+UAPs for 20 seconds\n");
+	printf("\tubertooth-rx -m -t 20 -- monitor mode: discover all LAPs+UAPs for 20 seconds, print any with recovered UAPs\n");
 	printf("\n");
 	printf("Major modes:\n");
 	printf("\t-l <LAP> to decode (6 hex) - if not specified sniff all LAPs\n");
@@ -60,7 +61,7 @@ static void usage()
 int main(int argc, char* argv[])
 {
 	int opt, have_lap = 0, have_uap = 0;
-	int survey_mode = 0;
+	int survey_mode = 0, monitor_mode = 0;
 	int r;
 	int timeout = 0;
 	char* end;
@@ -72,7 +73,7 @@ int main(int argc, char* argv[])
 
 	ubertooth_t* ut = ubertooth_init();
 
-	while ((opt=getopt(argc,argv,"hVi:l:u:U:d:e:r:sq:t:zc:")) != EOF) {
+	while ((opt=getopt(argc,argv,"hVi:l:u:U:d:e:r:sq:t:zc:m")) != EOF) {
 		switch(opt) {
 		case 'i':
 			infile = fopen(optarg, "r");
@@ -132,6 +133,9 @@ int main(int argc, char* argv[])
 		case 'z':
 			++survey_mode;
 			break;
+		case 'm':
+			++monitor_mode;
+			break;
 		case 'c':
 			channel = atoi(optarg);
 			channel = channel + 2402;
@@ -146,8 +150,13 @@ int main(int argc, char* argv[])
 		}
 	}
 
-	if(survey_mode && (have_lap || have_uap)) {
-		fprintf(stderr, "No address should be specified for survey mode\n");
+	if((survey_mode || monitor_mode) && (have_lap || have_uap)) {
+		fprintf(stderr, "No address should be specified for survey or monitor mode\n");
+		return 1;
+	}
+
+	if (survey_mode && monitor_mode) {
+		fprintf(stderr, "-z and -m are mutually exclusive. Choose one.\n");
 		return 1;
 	}
 
@@ -167,7 +176,7 @@ int main(int argc, char* argv[])
 	if (r < 0)
 		return r;
 
-	if(survey_mode) {
+	if(survey_mode || monitor_mode) {
 		// auto-flush stdout so that wrapper scripts work
 		setvbuf(stdout, NULL, _IONBF, 0);
 		btbb_init_survey();
@@ -217,7 +226,12 @@ int main(int argc, char* argv[])
 
 		// receive and process each packet
 		while(!ut->stop_ubertooth) {
-			ubertooth_bulk_receive(ut, cb_rx, pn);
+			if (monitor_mode) {
+				ubertooth_bulk_receive(ut, cb_rx, pn);
+			}
+			else {
+				ubertooth_bulk_receive(ut, cb_rx, pn);
+			}
 		}
 
 		ubertooth_bulk_thread_stop();
@@ -228,7 +242,7 @@ int main(int argc, char* argv[])
 		fclose(infile);
 	}
 
-	if(survey_mode) {
+	if(survey_mode || monitor_mode) {
 		printf("Survey Results\n");
 		while((pn=btbb_next_survey_result()) != NULL) {
 			lap = btbb_piconet_get_lap(pn);
