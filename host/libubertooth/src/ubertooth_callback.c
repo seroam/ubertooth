@@ -416,6 +416,128 @@ void cb_btle(ubertooth_t* ut, void* args)
 
 	fflush(stdout);
 }
+
+/*
+ * Sniff Bluetooth Low Energy packets.
+ */
+void cb_btle_monitor(ubertooth_t* ut, void* args)
+{
+	lell_packet* pkt;
+	btle_options* opts = (btle_options*)args;
+	int i;
+	usb_pkt_rx usb = fifo_pop(ut->fifo);
+	usb_pkt_rx* rx = &usb;
+	// u32 access_address = 0; // Build warning
+
+	static u32 prev_ts = 0;
+	uint32_t refAA;
+	int8_t sig, noise;
+
+	// display LE promiscuous mode state changes
+	if (rx->pkt_type == LE_PROMISC) {
+		u8 state = rx->data[0];
+		void* val = &rx->data[1];
+
+		printf("--------------------\n");
+		printf("LE Promisc - ");
+		switch (state) {
+		case 0:
+			printf("Access Address: %08x\n", *(uint32_t*)val);
+			break;
+		case 1:
+			printf("CRC Init: %06x\n", *(uint32_t*)val);
+			break;
+		case 2:
+			printf("Hop interval: %g ms\n", *(uint16_t*)val * 1.25);
+			break;
+		case 3:
+			printf("Hop increment: %u\n", *(uint8_t*)val);
+			break;
+		default:
+			printf("Unknown %u\n", state);
+			break;
+		};
+		printf("\n");
+
+		return;
+	}
+
+	uint64_t nowns = now_ns_from_clk100ns(ut, rx);
+
+	/* Sanity check */
+	if (rx->channel > (NUM_BREDR_CHANNELS - 1))
+		return;
+
+	if (infile == NULL)
+		systime = time(NULL);
+
+	/* Dump to sumpfile if specified */
+	if (dumpfile) {
+		uint32_t systime_be = htobe32(systime);
+		fwrite(&systime_be, sizeof(systime_be), 1, dumpfile);
+		fwrite(rx, sizeof(usb_pkt_rx), 1, dumpfile);
+		fflush(dumpfile);
+	}
+
+	lell_allocate_and_decode(rx->data, rx->channel + 2402, rx->clk100ns, &pkt);
+
+	/* do nothing further if filtered due to bad AA */
+	if (opts &&
+		(opts->allowed_access_address_errors <
+			lell_get_access_address_offenses(pkt))) {
+		lell_packet_unref(pkt);
+		return;
+	}
+
+	/* Dump to PCAP/PCAPNG if specified */
+	refAA = lell_packet_is_data(pkt) ? 0 : 0x8e89bed6;
+	sig = cc2400_rssi_to_dbm(rx->rssi_max);
+	noise = INT8_MIN; // FIXME - keep track of this
+
+	if (ut->h_pcap_le) {
+		/* only one of these two will succeed, depending on
+		 * whether PCAP was opened with DLT_PPI or not */
+		lell_pcap_append_packet(ut->h_pcap_le, nowns,
+			sig, noise,
+			refAA, pkt);
+		// read the above comment: this function may silently fail
+		lell_pcap_append_ppi_packet(ut->h_pcap_le, nowns,
+			rx->clkn_high,
+			rx->rssi_min, rx->rssi_max,
+			rx->rssi_avg, rx->rssi_count,
+			pkt);
+	}
+	if (ut->h_pcapng_le) {
+		lell_pcapng_append_packet(ut->h_pcapng_le, nowns,
+			sig, noise,
+			refAA, pkt);
+	}
+
+	// rollover
+	u32 rx_ts = rx->clk100ns;
+	if (rx_ts < prev_ts)
+		rx_ts += 3276800000;
+	u32 ts_diff = rx_ts - prev_ts;
+	prev_ts = rx->clk100ns;
+	printf("systime=%u freq=%d addr=%08x delta_t=%.03f ms rssi=%d\n",
+		systime, rx->channel + 2402, lell_get_access_address(pkt),
+		ts_diff / 10000.0, rx->rssi_min - 54);
+
+	int len = (rx->data[5] & 0x3f) + 6 + 3;
+	if (len > 50) len = 50;
+
+	for (i = 4; i < len; ++i)
+		printf("%02x ", rx->data[i]);
+	printf("\n");
+
+	lell_print(pkt);
+	printf("\n");
+
+	lell_packet_unref(pkt);
+
+	fflush(stdout);
+}
+
 /*
  * Sniff E-GO packets
  */

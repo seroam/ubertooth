@@ -610,6 +610,16 @@ static int vendor_request_handler(uint8_t request, uint16_t* request_params, uin
 		cs_threshold_calc_and_set(channel);
 		break;
 
+	case UBERTOOTH_BTLE_MONITOR:
+		*data_len = 0;
+
+		hop_mode = HOP_NONE;
+		requested_mode = MODE_BT_PROMISC_LE;
+
+		usb_queue_init();
+		cs_threshold_calc_and_set(channel);
+		break;
+
 	case UBERTOOTH_READ_REGISTER:
 		reg_val = cc2400_get(request_params[0]);
 		data[0] = (reg_val >> 8) & 0xff;

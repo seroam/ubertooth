@@ -114,6 +114,7 @@ static void usage(void)
 	printf("\t-f follow connections\n");
 	printf("\t-n don't follow, only print advertisements\n");
 	printf("\t-p promiscuous: sniff active connections\n");
+	printf("\t-m monitor: sniff active connections and print AA\n");
 	printf("\n");
 	printf("\t-a[address] get/set access address (example: -a8e89bed6)\n");
 	printf("\t-s<address> faux slave mode, using MAC addr (example: -s22:44:66:88:aa:cc)\n");
@@ -142,7 +143,7 @@ static void usage(void)
 int main(int argc, char *argv[])
 {
 	int opt;
-	int do_follow, do_no_follow, do_promisc;
+	int do_follow, do_no_follow, do_promisc, do_monitor;
 	int do_get_aa, do_set_aa;
 	int do_crc;
 	int do_adv_index;
@@ -183,6 +184,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'p':
 			do_promisc = 1;
+			break;
+		case 'm':
+			do_monitor = 1;
 			break;
 		case 'U':
 			ubertooth_device = atoi(optarg);
@@ -289,8 +293,8 @@ int main(int argc, char *argv[])
 	// cancel following on USR1
 	signal(SIGUSR1, cancel_follow_handler);
 
-	if (do_follow + do_no_follow + do_promisc > 1) {
-		printf("Error: must choose one -f, -n, or -p, pick one pal\n");
+	if (do_follow + do_no_follow + do_promisc + do_monitor > 1) {
+		printf("Error: must choose one -f, -n, -p, or -m, pick one pal\n");
 		return 1;
 	}
 
@@ -311,7 +315,7 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	if (do_follow || do_no_follow || do_promisc) {
+	if (do_follow || do_no_follow || do_promisc || do_monitor) {
 		usb_pkt_rx rx;
 
 		r = cmd_set_jam_mode(ut->devh, jam_mode);
@@ -331,8 +335,11 @@ int main(int argc, char *argv[])
 				channel = 2480;
 			cmd_set_channel(ut->devh, channel);
 			cmd_btle_sniffing(ut->devh, do_follow);
-		} else {
+		} else if (do_promisc) {
 			cmd_btle_promisc(ut->devh);
+		}
+		else if (do_monitor) {
+			cmd_btle_monitor(ut->devh);
 		}
 
 		// running can be changed by signal handler
