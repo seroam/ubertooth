@@ -422,6 +422,7 @@ void cb_btle(ubertooth_t* ut, void* args)
  */
 void cb_btle_monitor(ubertooth_t* ut, void* args)
 {
+	static uint32_t packets_received = 0;
 	lell_packet* pkt;
 	btle_options* opts = (btle_options*)args;
 	int i;
@@ -513,6 +514,7 @@ void cb_btle_monitor(ubertooth_t* ut, void* args)
 			refAA, pkt);
 	}
 
+	/*
 	// rollover
 	u32 rx_ts = rx->clk100ns;
 	if (rx_ts < prev_ts)
@@ -532,6 +534,9 @@ void cb_btle_monitor(ubertooth_t* ut, void* args)
 
 	lell_print(pkt);
 	printf("\n");
+	*/
+
+	printf("\r%u packets parsed.");
 
 	lell_packet_unref(pkt);
 
