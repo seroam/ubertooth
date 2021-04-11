@@ -666,7 +666,7 @@ void cb_rx_monitor(ubertooth_t* ut)
 	if (infile == NULL)
 		systime = time(NULL);
 
-	printf("LAP=%06x systime=%u ch=%2d \n",
+	printf("LAP=%06x systime=%u\n",
 		btbb_packet_get_lap(pkt),
 		(uint32_t)time(NULL)
 	);
