@@ -610,13 +610,12 @@ out:
 		btbb_packet_unref(pkt);
 }
 
-void cb_rx_monitor(ubertooth_t* ut, void* args)
+void cb_rx_monitor(ubertooth_t* ut)
 {
 	btbb_packet* pkt = NULL;
-	btbb_piconet* pn = (btbb_piconet*)args;
+	btbb_piconet* pn = NULL;
 	char syms[BANK_LEN * 10] = { 0 };
 	int offset;
-	uint16_t clk_offset;
 	uint32_t clkn;
 	int r;
 	uint32_t lap = LAP_ANY;
@@ -644,13 +643,6 @@ void cb_rx_monitor(ubertooth_t* ut, void* args)
 
 	uint64_t nowns = now_ns_from_clk100ns(ut, rx);
 
-	/* Look for packets with specified LAP, if given. Otherwise
-	 * search for any packet. */
-	if (pn) {
-		lap = btbb_piconet_get_flag(pn, BTBB_LAP_VALID) ? btbb_piconet_get_lap(pn) : LAP_ANY;
-		uap = btbb_piconet_get_flag(pn, BTBB_UAP_VALID) ? btbb_piconet_get_uap(pn) : UAP_ANY;
-	}
-
 	/* Pass packet-pointer-pointer so that
 	 * packet can be created in libbtbb. */
 	offset = btbb_find_ac(syms, BANK_LEN, lap, max_ac_errors, &pkt);
@@ -658,8 +650,6 @@ void cb_rx_monitor(ubertooth_t* ut, void* args)
 		goto out;
 
 	/* calculate the offset between the first bit of the AC and the rising edge of CLKN */
-	clk_offset = (le32toh(rx->clk100ns) + offset * 10 + 6250 - 4000) % 6250;
-
 	btbb_packet_set_modulation(pkt, BTBB_MOD_GFSK);
 	btbb_packet_set_transport(pkt, BTBB_TRANSPORT_ANY);
 
@@ -681,60 +671,8 @@ void cb_rx_monitor(ubertooth_t* ut, void* args)
 		btbb_packet_get_channel(pkt),
 		btbb_packet_get_lap(pkt),
 		btbb_packet_get_ac_errors(pkt),
-		clkn,
-		clk_offset
+		clkn
 	);
-
-	/* calibrate Ubertooth clock such that the first bit of the AC
-	 * arrives CLK_TUNE_TIME after the rising edge of CLKN */
-	/*if (pn != NULL && infile == NULL) {
-		if (trim_counter < -CLOCK_TRIM_THRESHOLD
-			|| ((clk_offset < CLK_TUNE_TIME) && !calibrated)) {
-			printf("offset < CLK_TUNE_TIME\n");
-			printf("CLK100ns Trim: %d\n", 6250 + clk_offset - CLK_TUNE_TIME);
-			cmd_trim_clock(ut->devh, 6250 + clk_offset - CLK_TUNE_TIME);
-			trim_counter = 0;
-			if (calibrated) {
-				printf("Clock drifted %d in %f s. %d PPM too slow.\n",
-					(clk_offset - CLK_TUNE_TIME),
-					(double)(clkn - clkn_trim) / 3200,
-					(clk_offset - CLK_TUNE_TIME) * 320 / (int32_t)(clkn - clkn_trim));
-				cmd_fix_clock_drift(ut->devh, (clk_offset - CLK_TUNE_TIME) * 320 / (int32_t)(clkn - clkn_trim));
-			}
-			clkn_trim = clkn;
-			calibrated = 1;
-			goto out;
-		}
-		else if (trim_counter > CLOCK_TRIM_THRESHOLD
-			|| ((clk_offset > CLK_TUNE_TIME) && !calibrated)) {
-			printf("offset > CLK_TUNE_TIME\n");
-			printf("CLK100ns Trim: %d\n", clk_offset - CLK_TUNE_TIME);
-			cmd_trim_clock(ut->devh, clk_offset - CLK_TUNE_TIME);
-			trim_counter = 0;
-			if (calibrated) {
-				printf("Clock drifted %d in %f s. %d PPM too fast.\n",
-					(clk_offset - CLK_TUNE_TIME),
-					(double)(clkn - clkn_trim) / 3200,
-					(clk_offset - CLK_TUNE_TIME) * 320 / (clkn - clkn_trim));
-				cmd_fix_clock_drift(ut->devh, (clk_offset - CLK_TUNE_TIME) * 320 / (clkn - clkn_trim));
-			}
-			clkn_trim = clkn;
-			calibrated = 1;
-			goto out;
-		}
-
-		if (clk_offset < CLK_TUNE_TIME - CLK_TUNE_OFFSET) {
-			trim_counter--;
-			goto out;
-		}
-		else if (clk_offset > CLK_TUNE_TIME + CLK_TUNE_OFFSET) {
-			trim_counter++;
-			goto out;
-		}
-		else {
-			trim_counter = 0;
-		}
-	}*/
 
 	/* If dumpfile is specified, write out all banks to the
 	 * file. There could be duplicate data in the dump if more

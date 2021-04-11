@@ -179,7 +179,8 @@ int main(int argc, char* argv[])
 	if(survey_mode || monitor_mode) {
 		// auto-flush stdout so that wrapper scripts work
 		setvbuf(stdout, NULL, _IONBF, 0);
-		btbb_init_survey();
+		if (survey_mode) { btbb_init_survey(); }
+		else { btbb_init_monitor(); }
 	} else {
 		if (have_lap) {
 			pn = btbb_piconet_new();
