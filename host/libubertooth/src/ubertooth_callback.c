@@ -422,7 +422,7 @@ void cb_btle(ubertooth_t* ut, void* args)
  */
 void cb_btle_monitor(ubertooth_t* ut, void* args)
 {
-	static uint32_t packets_received = 0;
+	static u32 packets_received = 0;
 	lell_packet* pkt;
 	btle_options* opts = (btle_options*)args;
 	int i;
@@ -433,6 +433,8 @@ void cb_btle_monitor(ubertooth_t* ut, void* args)
 	static u32 prev_ts = 0;
 	uint32_t refAA;
 	int8_t sig, noise;
+
+	++packets_received;
 
 	// display LE promiscuous mode state changes
 	if (rx->pkt_type == LE_PROMISC) {
