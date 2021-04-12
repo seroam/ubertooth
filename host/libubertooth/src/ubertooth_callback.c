@@ -539,6 +539,7 @@ void cb_btle_monitor(ubertooth_t* ut, void* args)
 	*/
 
 	lell_print_reduced(pkt);
+	uint32_t aa = lell_get_access_address(pkt);
 
 	printf("\r%u packets parsed.\n", packets_received);
 

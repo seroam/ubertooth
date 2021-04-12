@@ -614,7 +614,7 @@ static int vendor_request_handler(uint8_t request, uint16_t* request_params, uin
 		*data_len = 0;
 
 		hop_mode = HOP_NONE;
-		requested_mode = MODE_BT_PROMISC_LE;
+		requested_mode = MODE_BT_MONITOR_LE;
 
 		usb_queue_init();
 		cs_threshold_calc_and_set(channel);
@@ -882,6 +882,7 @@ void legacy_DMA_IRQHandler()
 	   || mode == MODE_SPECAN
 	   || mode == MODE_BT_FOLLOW_LE
 	   || mode == MODE_BT_PROMISC_LE
+	   || mode == MODE_BT_MONITOR_LE
 	   || mode == MODE_BT_SLAVE_LE
 	   || mode == MODE_RX_GENERIC)
 	{
@@ -1881,7 +1882,7 @@ void bt_le_sync(u8 active_mode)
 			}
 
 			// go back to promisc if the connection dies
-			if (active_mode == MODE_BT_PROMISC_LE)
+			if (active_mode == MODE_BT_PROMISC_LE || active_mode == MODE_BT_MONITOR_LE)
 				goto cleanup;
 
 			le.link_state = LINK_LISTENING;
@@ -2340,6 +2341,104 @@ int cb_le_promisc(char *unpacked) {
 	return 1;
 }
 
+/* le promiscuous mode */
+int cb_le_monitor(char* unpacked) {
+	int i, j, k;
+	int idx;
+
+	// empty data PDU: 01 00
+	char desired[4][16] = {
+		{ 1, 0, 0, 0, 0, 0, 0, 0,
+		  0, 0, 0, 0, 0, 0, 0, 0, },
+		{ 1, 0, 0, 1, 0, 0, 0, 0,
+		  0, 0, 0, 0, 0, 0, 0, 0, },
+		{ 1, 0, 1, 0, 0, 0, 0, 0,
+		  0, 0, 0, 0, 0, 0, 0, 0, },
+		{ 1, 0, 1, 1, 0, 0, 0, 0,
+		  0, 0, 0, 0, 0, 0, 0, 0, },
+	};
+
+	for (i = 0; i < 4; ++i) {
+		idx = whitening_index[btle_channel_index(channel)];
+
+		// whiten the desired data
+		for (j = 0; j < (int)sizeof(desired[i]); ++j) {
+			desired[i][j] ^= whitening[idx];
+			idx = (idx + 1) % sizeof(whitening);
+		}
+	}
+
+	// then look for that bitsream in our receive buffer
+	for (i = 32; i < (DMA_SIZE * 8 * 2 - 32 - 16); i++) {
+		int ok[4] = { 1, 1, 1, 1 };
+		int matching = -1;
+
+		for (j = 0; j < 4; ++j) {
+			for (k = 0; k < (int)sizeof(desired[j]); ++k) {
+				if (unpacked[i + k] != desired[j][k]) {
+					ok[j] = 0;
+					break;
+				}
+			}
+		}
+
+		// see if any match
+		for (j = 0; j < 4; ++j) {
+			if (ok[j]) {
+				matching = j;
+				break;
+			}
+		}
+
+		// skip if no match
+		if (matching < 0)
+			continue;
+
+		// found a match! unwhiten it and send it home
+		idx = whitening_index[btle_channel_index(channel)];
+		for (j = 0; j < 4 + 3 + 3; ++j) {
+			u8 byte = 0;
+			for (k = 0; k < 8; k++) {
+				int offset = k + (j * 8) + i - 32;
+				if (offset >= DMA_SIZE * 8 * 2) break;
+				int bit = unpacked[offset];
+				if (j >= 4) { // unwhiten data bytes
+					bit ^= whitening[idx];
+					idx = (idx + 1) % sizeof(whitening);
+				}
+				byte |= bit << k;
+			}
+			idle_rxbuf[j] = byte;
+		}
+
+		u32 aa = (idle_rxbuf[3] << 24) |
+			(idle_rxbuf[2] << 16) |
+			(idle_rxbuf[1] << 8) |
+			(idle_rxbuf[0]);
+		//see_aa(aa);
+
+		enqueue(LE_PACKET, (uint8_t*)idle_rxbuf);
+
+	}
+
+	/*
+	// once we see an AA 5 times, start following it
+	for (i = 0; i < AA_LIST_SIZE; ++i) {
+		if (le_promisc.active_aa[i].count > 3) {
+			le_set_access_address(le_promisc.active_aa[i].aa);
+			data_cb = cb_follow_le;
+			packet_cb = promisc_follow_cb;
+			le.crc_verify = 0;
+			le_promisc_state(0, &le.access_address, 4);
+			// quit using the old stuff and switch to sync mode
+			return 0;
+		}
+	}*/
+
+	return 1;
+}
+
+
 void bt_promisc_le() {
 	while (requested_mode == MODE_BT_PROMISC_LE) {
 		reset_le_promisc();
@@ -2364,6 +2463,33 @@ void bt_promisc_le() {
 		packet_cb = promisc_follow_cb;
 		le.crc_verify = 0;
 		bt_le_sync(MODE_BT_PROMISC_LE);
+	}
+}
+
+void bt_monitor_le() {
+	while (requested_mode == MODE_BT_MONITOR_LE) {
+		reset_le_promisc();
+
+		// jump to a random data channel and turn up the squelch
+		if ((channel & 1) == 1)
+			channel = 2440;
+
+		// if the PC hasn't given us AA, determine by listening
+		if (!le.target_set) {
+			// cs_threshold_req = -80;
+			cs_threshold_calc_and_set(channel);
+			data_cb = cb_le_monitor;
+			bt_generic_le(MODE_BT_MONITOR_LE);
+		}
+
+		// could have got mode change in middle of above
+		if (requested_mode != MODE_BT_MONITOR_LE)
+			break;
+
+		//le_promisc_state(0, &le.access_address, 4);
+		//packet_cb = promisc_follow_cb;
+		//le.crc_verify = 0;
+		//bt_le_sync(MODE_BT_PROMISC_LE);
 	}
 }
 
@@ -2675,6 +2801,9 @@ int main()
 					break;
 				case MODE_BT_PROMISC_LE:
 					bt_promisc_le();
+					break;
+				case MODE_BT_MONITOR_LE:
+					bt_monitor_le();
 					break;
 #ifdef TX_ENABLE
 				case MODE_BT_SLAVE_LE:
