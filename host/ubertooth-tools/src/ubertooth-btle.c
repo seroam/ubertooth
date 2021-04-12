@@ -359,6 +359,7 @@ int main(int argc, char *argv[])
 					cb_btle(ut, &cb_opts);
 				}
 				else {
+					init_aa_log();
 					cb_btle_monitor(ut, &cb_opts);
 				}
 			}
