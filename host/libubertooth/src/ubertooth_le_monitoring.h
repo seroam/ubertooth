@@ -8,9 +8,11 @@
 typedef struct {
 	time_t timestamp;
 	uint32_t aa;
+	uint32_t count;
 } aa_log_entry_t;
 
 typedef struct {
+	size_t num_entries;
 	aa_log_entry_t* log;
 } aa_log_t;
 aa_log_t aa_log;
