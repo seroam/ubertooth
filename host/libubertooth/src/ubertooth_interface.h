@@ -116,7 +116,8 @@ enum ubertooth_usb_commands {
 	UBERTOOTH_XMAS               = 73,
 
 	// BA
-	UBERTOOTH_BTLE_MONITOR		 = 100
+	UBERTOOTH_BTLE_MONITOR		 = 100,
+	UBERTOOTH_BTLE_MONITOR_ADV   = 101,
 };
 
 enum rfcat24_subcommands {

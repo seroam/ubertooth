@@ -556,6 +556,18 @@ static int vendor_request_handler(uint8_t request, uint16_t* request_params, uin
 		cs_threshold_calc_and_set(channel);
 		break;
 
+	case UBERTOOTH_BTLE_MONITOR_ADV:
+		le.do_follow = request_params[0];
+		*data_len = 0;
+
+		do_hop = 0;
+		hop_mode = HOP_BTLE;
+		requested_mode = MODE_BT_FOLLOW_LE;
+
+		usb_queue_init();
+		cs_threshold_calc_and_set(channel);
+		break;
+
 	case UBERTOOTH_GET_ACCESS_ADDRESS:
 		for(int i=0; i < 4; i++) {
 			data[i] = (le.access_address >> (8*i)) & 0xff;

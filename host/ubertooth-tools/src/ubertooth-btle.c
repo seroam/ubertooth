@@ -115,6 +115,7 @@ static void usage(void)
 	printf("\t-n don't follow, only print advertisements\n");
 	printf("\t-p promiscuous: sniff active connections\n");
 	printf("\t-m monitor: sniff active connections and print AA\n");
+	printf("\t-M monitor advertisements: Monitor the adverising channels and print MACs\n");
 	printf("\n");
 	printf("\t-a[address] get/set access address (example: -a8e89bed6)\n");
 	printf("\t-s<address> faux slave mode, using MAC addr (example: -s22:44:66:88:aa:cc)\n");
@@ -143,7 +144,7 @@ static void usage(void)
 int main(int argc, char *argv[])
 {
 	int opt;
-	int do_follow, do_no_follow, do_promisc, do_monitor;
+	int do_follow, do_no_follow, do_promisc, do_monitor, do_monitor_adv;
 	int do_get_aa, do_set_aa;
 	int do_crc;
 	int do_adv_index;
@@ -160,13 +161,13 @@ int main(int argc, char *argv[])
 	uint8_t mac_address[6] = { 0, };
 	uint8_t mac_mask = 0;
 
-	do_follow = do_no_follow = do_promisc = 0;
+	do_follow = do_no_follow = do_promisc = do_monitor = do_monitor_adv = 0;
 	do_get_aa = do_set_aa = 0;
 	do_crc = -1; // 0 and 1 mean set, 2 means get
 	do_adv_index = 37;
 	do_slave_mode = do_target = 0;
 
-	while ((opt=getopt(argc,argv,"a::r:hfnpU:v::A:s:t:x:c:q:jJiIm")) != EOF) {
+	while ((opt=getopt(argc,argv,"a::r:hfnpU:v::A:s:t:x:c:q:jJiImM")) != EOF) {
 		switch(opt) {
 		case 'a':
 			if (optarg == NULL) {
@@ -181,6 +182,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'n':
 			do_no_follow = 1;
+			break;
+		case 'M':
+			do_monitor_adv = 1;
 			break;
 		case 'p':
 			do_promisc = 1;
@@ -293,8 +297,8 @@ int main(int argc, char *argv[])
 	// cancel following on USR1
 	signal(SIGUSR1, cancel_follow_handler);
 
-	if (do_follow + do_no_follow + do_promisc + do_monitor > 1) {
-		printf("Error: must choose one -f, -n, -p, or -m, pick one pal\n");
+	if (do_follow + do_no_follow + do_promisc + do_monitor + do_monitor_adv > 1) {
+		printf("Error: must choose one -f, -n, -p, -m, or -M pick one pal\n");
 		return 1;
 	}
 
@@ -315,7 +319,7 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	if (do_follow || do_no_follow || do_promisc || do_monitor) {
+	if (do_follow || do_no_follow || do_promisc || do_monitor || do_monitor_adv) {
 		usb_pkt_rx rx;
 
 		r = cmd_set_jam_mode(ut->devh, jam_mode);
@@ -325,7 +329,7 @@ int main(int argc, char *argv[])
 		}
 		cmd_set_modulation(ut->devh, MOD_BT_LOW_ENERGY);
 
-		if (do_follow || do_no_follow) {
+		if (do_follow || do_no_follow || do_monitor_adv) {
 			u16 channel;
 			if (do_adv_index == 37)
 				channel = 2402;
@@ -335,7 +339,8 @@ int main(int argc, char *argv[])
 				channel = 2480;
 			cmd_set_channel(ut->devh, channel);
 			cmd_btle_sniffing(ut->devh, do_follow);
-		} else if (do_promisc) {
+		} 
+		else if (do_promisc) {
 			cmd_btle_promisc(ut->devh);
 		}
 		else if (do_monitor) {
@@ -407,7 +412,7 @@ int main(int argc, char *argv[])
 		cmd_btle_slave(ut->devh, mac_address);
 	}
 
-	if (!(do_follow || do_no_follow || do_promisc || do_monitor || do_get_aa || do_set_aa ||
+	if (!(do_follow || do_no_follow || do_promisc || do_monitor || do_monitor_adv || do_get_aa || do_set_aa ||
 				do_crc >= 0 || do_slave_mode || do_target))
 		usage();
 
