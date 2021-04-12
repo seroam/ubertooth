@@ -371,7 +371,7 @@ static int vendor_request_handler(uint8_t request, uint16_t* request_params, uin
 		}
 
 		le_adv_channel = requested_channel;
-		if (mode != MODE_BT_FOLLOW_LE) {
+		if (mode != MODE_BT_FOLLOW_LE && mode != MODE_BT_MONITOR_ADV_LE) {
 			channel = requested_channel;
 			requested_channel = 0;
 
@@ -562,7 +562,7 @@ static int vendor_request_handler(uint8_t request, uint16_t* request_params, uin
 
 		do_hop = 0;
 		hop_mode = HOP_BTLE;
-		requested_mode = MODE_BT_FOLLOW_LE;
+		requested_mode = MODE_BT_MONITOR_ADV_LE;
 
 		usb_queue_init();
 		cs_threshold_calc_and_set(channel);
@@ -865,7 +865,7 @@ static void msleep(uint32_t millis)
 void legacy_DMA_IRQHandler();
 void le_DMA_IRQHandler();
 void DMA_IRQHandler(void) {
-	if (mode == MODE_BT_FOLLOW_LE)
+	if (mode == MODE_BT_FOLLOW_LE || mode == MODE_BT_MONITOR_ADV_LE)
 		le_DMA_IRQHandler();
 	else
 		legacy_DMA_IRQHandler();
@@ -893,6 +893,7 @@ void legacy_DMA_IRQHandler()
 	   || mode == MODE_BT_FOLLOW
 	   || mode == MODE_SPECAN
 	   || mode == MODE_BT_FOLLOW_LE
+	   || mode == MODE_BT_MONITOR_ADV_LE
 	   || mode == MODE_BT_PROMISC_LE
 	   || mode == MODE_BT_MONITOR_LE
 	   || mode == MODE_BT_SLAVE_LE
@@ -2809,6 +2810,10 @@ int main()
 					break;
 				case MODE_BT_FOLLOW_LE:
 					mode = MODE_BT_FOLLOW_LE;
+					bt_follow_le();
+					break;
+				case MODE_BT_MONITOR_ADV_LE:
+					mode = MODE_BT_MONITOR_ADV_LE;
 					bt_follow_le();
 					break;
 				case MODE_BT_PROMISC_LE:

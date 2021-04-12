@@ -52,6 +52,7 @@ enum operating_modes {
 	MODE_XMAS          = 17,
 
 	MODE_BT_MONITOR_LE = 100,
+	MODE_BT_MONITOR_ADV_LE = 101,
 };
 
 /* hardware identification number */

@@ -970,7 +970,7 @@ void le_phy_main(void) {
 
 	cancel_follow = 0;
 
-	while (requested_mode == MODE_BT_FOLLOW_LE) {
+	while (requested_mode == MODE_BT_FOLLOW_LE || requested_mode == MODE_BT_MONITOR_ADV_LE) {
 		le_rx_t *packet = NULL;
 		if (queue_remove(&packet_queue, (void **)&packet)) {
 			le_dewhiten(packet->data, packet->size, packet->channel);
