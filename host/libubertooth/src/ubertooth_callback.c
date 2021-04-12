@@ -466,8 +466,6 @@ void cb_btle_monitor(ubertooth_t* ut, void* args)
 		return;
 	}
 
-	test();
-
 	uint64_t nowns = now_ns_from_clk100ns(ut, rx);
 
 	/* Sanity check */
@@ -519,30 +517,8 @@ void cb_btle_monitor(ubertooth_t* ut, void* args)
 			refAA, pkt);
 	}
 
-	/*
-	// rollover
-	u32 rx_ts = rx->clk100ns;
-	if (rx_ts < prev_ts)
-		rx_ts += 3276800000;
-	u32 ts_diff = rx_ts - prev_ts;
-	prev_ts = rx->clk100ns;
-	printf("systime=%u freq=%d addr=%08x delta_t=%.03f ms rssi=%d\n",
-		systime, rx->channel + 2402, lell_get_access_address(pkt),
-		ts_diff / 10000.0, rx->rssi_min - 54);
-
-	int len = (rx->data[5] & 0x3f) + 6 + 3;
-	if (len > 50) len = 50;
-
-	for (i = 4; i < len; ++i)
-		printf("%02x ", rx->data[i]);
-	printf("\n");
-
-	lell_print(pkt);
-	printf("\n");
-	*/
-
 	lell_print_reduced(pkt);
-	uint32_t aa = lell_get_access_address(pkt);
+	log_aa(pkt);
 
 	printf("\r%u packets parsed.\n", packets_received);
 
