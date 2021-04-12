@@ -441,6 +441,7 @@ void cb_btle_monitor(ubertooth_t* ut, void* args)
 		u8 state = rx->data[0];
 		void* val = &rx->data[1];
 
+		printf("THIS TEXT SHOULD NEVER BE SHOWN\n");
 		printf("--------------------\n");
 		printf("LE Promisc - ");
 		switch (state) {
@@ -464,6 +465,8 @@ void cb_btle_monitor(ubertooth_t* ut, void* args)
 
 		return;
 	}
+
+	test();
 
 	uint64_t nowns = now_ns_from_clk100ns(ut, rx);
 
