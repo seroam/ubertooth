@@ -517,10 +517,10 @@ void cb_btle_monitor(ubertooth_t* ut, void* args)
 			refAA, pkt);
 	}
 
-	lell_print_reduced(pkt);
+	//lell_print_reduced(pkt);
 	log_aa(pkt);
 
-	printf("\r%u packets parsed.\n", packets_received);
+	printf("\r%u packets parsed.", packets_received);
 
 	lell_packet_unref(pkt);
 

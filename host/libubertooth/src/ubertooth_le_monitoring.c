@@ -23,7 +23,7 @@ void log_aa(lell_packet* pkt) {
 			aa_log.log[i].timestamp = timestamp;
 			
 			if (++aa_log.log[i].count > 4) {
-				printf("AA=%06X timestamp=%u count=%u\n", aa, timestamp, aa_log.log[i].count);
+				printf("\rAA=%06X timestamp=%u count=%u\n", aa, timestamp, aa_log.log[i].count);
 			}
 
 			return;

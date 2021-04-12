@@ -339,6 +339,7 @@ int main(int argc, char *argv[])
 			cmd_btle_promisc(ut->devh);
 		}
 		else if (do_monitor) {
+			init_aa_log();
 			cmd_btle_monitor(ut->devh);
 		}
 
@@ -359,7 +360,6 @@ int main(int argc, char *argv[])
 					cb_btle(ut, &cb_opts);
 				}
 				else {
-					init_aa_log();
 					cb_btle_monitor(ut, &cb_opts);
 				}
 			}
