@@ -361,11 +361,14 @@ int main(int argc, char *argv[])
 			}
 			if (r == sizeof(usb_pkt_rx)) {
 				fifo_push(ut->fifo, &rx);
-				if (!do_monitor) {
-					cb_btle(ut, &cb_opts);
+				if (do_monitor_adv) {
+					cb_btle_monitor_adv(ut, &cb_opts);
+				}
+				else if (do_monitor) {
+					cb_btle_monitor(ut, &cb_opts);
 				}
 				else {
-					cb_btle_monitor(ut, &cb_opts);
+					cb_btle(ut, &cb_opts);
 				}
 			}
 			usleep(500);
