@@ -55,3 +55,6 @@ ID
 *.sublime-workspace
 .vscode
 .vs
+
+# log files
+*.log
