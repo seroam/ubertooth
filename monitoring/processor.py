@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.9
 
 import os
 import subprocess
@@ -7,36 +7,11 @@ import argparse
 import threading
 import logging as log
 import sys
+import atexit
+import sniffer
+import datetime
+from networking import RequestHandler, Method
 
-running = True
-
-def sniff_btle_adv(cmd):
-    process = subprocess.Popen(args=cmd.split(' '), 
-                          stdin=subprocess.PIPE,
-                          stdout=subprocess.PIPE,
-                          stderr=subprocess.PIPE)
-
-    while True:
-        # Process exited
-        if (exit_code := process.poll()) is not None:
-            # Should be running
-            if running:
-                log.warning(f'Process exited unexpectedly with code {exit_code}. Restarting...')
-                process = subprocess.Popen(args=cmd.split(' '),
-                                           stdin=subprocess.PIPE,
-                                           stdout=subprocess.PIPE,
-                                           stderr=subprocess.PIPE)
-            # Should not be running
-            else:
-                log.info(f'Process exited with code {exit_code}')
-                break
-
-        else:
-            # Should terminate
-            if not running:
-                log.info("Terminating")
-
-        sleep(1)
 
 
 def create_pipe(filename: str) -> None:
@@ -77,21 +52,42 @@ def init_log(log_path: str, log_name: str) -> log.Logger:
         ]
     )
 
-def test():
-    pass
-
 
 if __name__ == '__main__':
-    test()
+
     parser = argparse.ArgumentParser(description='Bluetooth Device Tracker.')
 
     log_path = './logs/'
     log_name = 'log01.log'
-    logger: log.Logger = init_log(log_path, log_name)
+    init_log(log_path, log_name)
 
-    
+    # Networking
+    dict_keys = ['id', 'uap', 'lap', 'nap', 'timestamp', 'antenna']
+    import random
+    dict_vals = [random.randint(5, 1000), 'string', 'string', 'string', datetime.datetime.now().isoformat(), 1]
 
+    data = dict(zip(dict_keys, dict_vals))
 
-    cmd = f'sleep 5'
+    request_handler = RequestHandler()
+    request_handler.make_btbr_request(Method.POST, data)
 
-    sniff_btle_adv(cmd)
+    input()
+
+    request_handler.make_btbr_request(Method.GET)
+
+    input()
+
+    # Threading subprocess
+    sniffer1 = sniffer.Sniffer(sniffer.Type.BTBR)
+    sniffer2 = sniffer.Sniffer(sniffer.Type.BTLE_ADV)
+    sniffer3 = sniffer.Sniffer(sniffer.Type.BTLE_DATA)
+
+    sniffer1.start()
+    sniffer2.start()
+    sniffer3.start()
+
+    print('Sniffers started.')
+    input()
+    sniffer1.stop()
+    sniffer2.stop()
+    sniffer3.stop()
