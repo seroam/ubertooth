@@ -10,6 +10,8 @@ import logging as log
 from queue import Queue
 from enum import Enum, IntEnum, auto
 from threading import Thread
+from collections import namedtuple
+from dataclasses import dataclass
 
 __all__ = ['Endpoint', 'Method', 'RequestHandler']
 
@@ -32,6 +34,11 @@ class Method(IntEnum):
     PUT = 2
     DELETE = 3
 
+class Request:
+    def __init__(self, method: Method, endpoint: Endpoint, data: dict=None):
+        self.method = method
+        self.endpoint = endpoint
+        self.data = data
 
 class RequestHandler:
 
@@ -68,9 +75,10 @@ class RequestHandler:
 
         
     @staticmethod
-    def make_btbr_request(method: Method, data: dict = None, cb_success: tuple = None):
-        data = json.dumps(data)
-        RequestHandler.__queue.put_nowait({'method': method, 'endpoint': Endpoint.BTBR.value, 'data': data})
+    def make_post_request(endpoint: Endpoint, data: dict):
+
+        request = Request(method=Method.POST, endpoint=endpoint.value, data=json.dumps(data))
+        RequestHandler.__queue.put_nowait(request)
 
     @staticmethod
     def __send():
@@ -79,25 +87,25 @@ class RequestHandler:
                 log.debug('Grabbing request...')
                 request = RequestHandler.__queue.get()
 
-                if (method := request['method']) == Method.GET:
+                if request.method == Method.GET:
                     headers = {'Accept': 'text/plain'}
-                    response == requests.get( url=f'https://{RequestHandler._hostname}:{RequestHandler._port}/api/{request["endpoint"]}',
+                    response == requests.get( url=f'https://{RequestHandler._hostname}:{RequestHandler._port}/api/{request.endpoint}',
                                             headers=headers,
                                             verify=RequestHandler._verify )
 
-                elif method == Method.POST:
+                elif request.method == Method.POST:
                     headers = {'Accept': 'text/plain', 'Content-Type': 'application/json'}
-                    response = requests.post( url=f'https://{RequestHandler._hostname}:{RequestHandler._port}/api/{request["endpoint"]}',
+                    response = requests.post( url=f'https://{RequestHandler._hostname}:{RequestHandler._port}/api/{request.endpoint}',
                                             headers=headers,
-                                            data=request['data'],
+                                            data=request.data,
                                             verify=RequestHandler._verify )
 
-                elif method == Method.PUT:
-                    raise NotImplementedError(f'Method {method} not implemented.')
-                elif method == Method.DELETE:
-                    raise NotImplementedError(f'Method {method} not implemented.')
+                elif request.method == Method.PUT:
+                    raise NotImplementedError(f'Method {request.method} not implemented.')
+                elif request.method == Method.DELETE:
+                    raise NotImplementedError(f'Method {request.method} not implemented.')
                 else:
-                    raise NotImplementedError(f'Unknown method: {method}.')
+                    raise NotImplementedError(f'Unknown method: {request.method}.')
 
                 
                 if response.ok:
@@ -123,17 +131,24 @@ class RequestHandler:
         return hostname, port
 
 if __name__ == '__main__':
+    from sys import stdout
+    log.basicConfig(
+        level=log.DEBUG,
+        format='%(asctime)s [%(threadName)s] [%(levelname)s] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+        handlers=[
+            log.StreamHandler(stdout)
+        ]
+    )
 
-    ep = Endpoint.BTBR
-    print(ep.value)
-    dict_keys = ['id', 'uap', 'lap', 'nap', 'timestamp', 'antenna']
-    dict_vals = [3, 'string', 'string', 'string', datetime.datetime.now().isoformat(), 1]
+    dict_keys = ['uap', 'lap', 'nap', 'timestamp', 'antenna']
+    dict_vals = ['string', 'string', 'string', datetime.datetime.now().isoformat(), 1]
 
     #data = json.dumps(dict(zip(dict_keys, dict_vals)))
     data = dict(zip(dict_keys, dict_vals))
 
     request_handler = RequestHandler()
-    request_handler.make_btbr_request(Method.POST, data)
+    request_handler.make_post_request(Endpoint.BTBR, data)
 
 
     input()

@@ -10,17 +10,16 @@ import sys
 import atexit
 import sniffer
 import datetime
-from networking import RequestHandler, Method
+from networking import RequestHandler, Method, Endpoint
+from contextlib import suppress
 
 
 
 def create_pipe(filename: str) -> None:
-    if os.path.isfile(filename):
+    with suppress(OSError):
         os.remove(filename)
-    elif os.path.isdir(filename):
-        os.rmdir(filename)
     
-    os.mkfifo(filename, mode)
+    os.mkfifo(filename, 0o600)
 
 class LevelFilter(log.Filter):
     def __init__(self, low: int, high: int = None):
@@ -30,11 +29,10 @@ class LevelFilter(log.Filter):
     def filter(self, record: log.LogRecord) -> bool:
         return self.__low <= record.levelno <= self.__high
 
-def init_log(log_path: str, log_name: str) -> log.Logger:
+def init_log(log_path: str) -> None:
 
     # Create log directory if necessary
-    os.makedirs(log_path, mode=0o700, exist_ok=True)
-
+    os.makedirs(os.path.dirname(log_path), mode=0o700, exist_ok=True)
 
     stdout_handler = log.StreamHandler(sys.stdout)
     stdout_handler.addFilter(LevelFilter(log.NOTSET, log.WARNING))
@@ -46,37 +44,13 @@ def init_log(log_path: str, log_name: str) -> log.Logger:
         format='%(asctime)s [%(threadName)s] [%(levelname)s] %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S',
         handlers=[
-            log.FileHandler(f'{log_path}{"/" if not log_path.endswith("/") else ""}{log_name}'),       
+            log.FileHandler(log_path),       
             stdout_handler,
             stderr_handler
         ]
     )
 
-
-if __name__ == '__main__':
-
-    parser = argparse.ArgumentParser(description='Bluetooth Device Tracker.')
-
-    log_path = './logs/'
-    log_name = 'log01.log'
-    init_log(log_path, log_name)
-
-    # Networking
-    dict_keys = ['id', 'uap', 'lap', 'nap', 'timestamp', 'antenna']
-    import random
-    dict_vals = [random.randint(5, 1000), 'string', 'string', 'string', datetime.datetime.now().isoformat(), 1]
-
-    data = dict(zip(dict_keys, dict_vals))
-
-    request_handler = RequestHandler()
-    request_handler.make_btbr_request(Method.POST, data)
-
-    input()
-
-    request_handler.make_btbr_request(Method.GET)
-
-    input()
-
+def test_sniffers():
     # Threading subprocess
     sniffer1 = sniffer.Sniffer(sniffer.Type.BTBR)
     sniffer2 = sniffer.Sniffer(sniffer.Type.BTLE_ADV)
@@ -91,3 +65,30 @@ if __name__ == '__main__':
     sniffer1.stop()
     sniffer2.stop()
     sniffer3.stop()
+
+def test_api_btbr_post():
+    # Networking
+    dict_keys = ['uap', 'lap', 'nap', 'timestamp', 'antenna']
+    dict_vals = ['string', 'string', 'string', datetime.datetime.now().isoformat(), 1]
+
+    data = dict(zip(dict_keys, dict_vals))
+
+    request_handler = RequestHandler.get_instance()
+    request_handler.make_post_request(Endpoint.BTBR, data)
+
+
+if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser(description='Bluetooth Device Tracker.')
+
+    log_path = f'./logs/{datetime.date.today()}.log'
+    init_log(log_path)
+
+    RequestHandler()
+
+    test_api_btbr_post()
+
+    input()
+
+    test_sniffers()
+    
