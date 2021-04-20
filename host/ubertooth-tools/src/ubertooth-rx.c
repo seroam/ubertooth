@@ -73,7 +73,7 @@ int main(int argc, char* argv[])
 
 	ubertooth_t* ut = ubertooth_init();
 
-	while ((opt=getopt(argc,argv,"hVi:l:u:U:d:e:r:sq:t:zc:m")) != EOF) {
+	while ((opt=getopt(argc,argv,"hVi:l:u:U:d:e:r:sq:t:zc:m:")) != EOF) {
 		switch(opt) {
 		case 'i':
 			infile = fopen(optarg, "r");
@@ -135,6 +135,13 @@ int main(int argc, char* argv[])
 			break;
 		case 'm':
 			++monitor_mode;
+			
+			printf("Writing to pipe: %s\n", optarg);
+
+			btbb_monitor_open_pipe(optarg, &ut->h_monitor);
+
+			//btbb_monitor_write_btbr(ut->h_monitor);
+			
 			break;
 		case 'c':
 			channel = atoi(optarg);

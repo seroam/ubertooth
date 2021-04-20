@@ -58,6 +58,7 @@ typedef struct {
 	lell_pcap_handle* h_pcap_le;
 	btbb_pcapng_handle* h_pcapng_bredr;
 	lell_pcapng_handle* h_pcapng_le;
+	btbb_monitor_handle* h_monitor;
 } ubertooth_t;
 
 typedef void (*rx_callback)(ubertooth_t* ut, void* args);
