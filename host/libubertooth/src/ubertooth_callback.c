@@ -601,8 +601,12 @@ void cb_btle_monitor(ubertooth_t* ut, void* args)
 			refAA, pkt);
 	}
 
+	time_t timestamp = time(NULL);
+	uint32_t aa = lell_get_access_address(pkt);
+	btbb_monitor_write_btle(aa, timestamp);
 	//lell_print_reduced(pkt);
 	log_aa(pkt);
+	//btbb_
 
 	printf("\r%u packets parsed.", packets_received);
 
@@ -862,7 +866,7 @@ void cb_rx_monitor(ubertooth_t* ut)
 		systime = time(NULL);
 
 	btbb_monitor_write_btbr(0, 0, btbb_packet_get_lap(pkt), time(NULL));
-	
+	// TODO: remove printf
 	printf("LAP=%06x systime=%u\n",
 		btbb_packet_get_lap(pkt),
 		(uint32_t)time(NULL)

@@ -135,13 +135,10 @@ int main(int argc, char* argv[])
 			break;
 		case 'm':
 			++monitor_mode;
-			
-			printf("Writing to pipe: %s\n", optarg);
 
-			btbb_monitor_open_pipe(optarg, &ut->h_monitor);
-
-			//btbb_monitor_write_btbr(ut->h_monitor);
-			
+			if (btbb_monitor_open_pipe(optarg, &ut->h_monitor)) {
+				err(1, "btbb_monitor_open_pipe: ");
+			}
 			break;
 		case 'c':
 			channel = atoi(optarg);

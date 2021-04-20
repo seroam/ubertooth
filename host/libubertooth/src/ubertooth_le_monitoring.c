@@ -15,8 +15,7 @@ void destroy_aa_log() {
 void log_aa(lell_packet* pkt) {
 
 	time_t timestamp = time(NULL);
-	int aa = lell_get_access_address(pkt);
-
+	uint32_t aa = lell_get_access_address(pkt);
 	
 	for (size_t i = 0; i < AA_LOG_SIZE; ++i) {
 		if (aa_log.log[i].aa == aa) {

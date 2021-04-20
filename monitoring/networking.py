@@ -89,7 +89,7 @@ class RequestHandler:
 
                 if request.method == Method.GET:
                     headers = {'Accept': 'text/plain'}
-                    response == requests.get( url=f'https://{RequestHandler._hostname}:{RequestHandler._port}/api/{request.endpoint}',
+                    response = requests.get( url=f'https://{RequestHandler._hostname}:{RequestHandler._port}/api/{request.endpoint}',
                                             headers=headers,
                                             verify=RequestHandler._verify )
 
