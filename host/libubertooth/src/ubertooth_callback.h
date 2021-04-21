@@ -25,7 +25,6 @@
 
 #include "ubertooth_control.h"
 #include "ubertooth.h"
-#include "ubertooth_le_monitoring.h"
 
 void cb_afh_initial(ubertooth_t* ut, void* args);
 void cb_afh_monitor(ubertooth_t* ut, void* args);

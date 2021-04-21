@@ -167,7 +167,7 @@ int main(int argc, char *argv[])
 	do_adv_index = 37;
 	do_slave_mode = do_target = 0;
 
-	while ((opt=getopt(argc,argv,"a::r:hfnpU:v::A:s:t:x:c:q:jJiIm:M")) != EOF) {
+	while ((opt=getopt(argc,argv,"a::r:hfnpU:v::A:s:t:x:c:q:jJiIm:M:")) != EOF) {
 		switch(opt) {
 		case 'a':
 			if (optarg == NULL) {
@@ -185,6 +185,11 @@ int main(int argc, char *argv[])
 			break;
 		case 'M':
 			do_monitor_adv = 1;
+
+			if(btbb_monitor_open_pipe(optarg, &ut->h_monitor)) {
+				err(1, "btbb_monitor_open_pipe: ");
+			}
+			
 			break;
 		case 'p':
 			do_promisc = 1;
@@ -195,7 +200,7 @@ int main(int argc, char *argv[])
 			if (btbb_monitor_open_pipe(optarg, &ut->h_monitor)) {
 				err(1, "btbb_monitor_open_pipe: ");
 			}
-			
+
 			break;
 		case 'U':
 			ubertooth_device = atoi(optarg);
@@ -349,7 +354,6 @@ int main(int argc, char *argv[])
 			cmd_btle_promisc(ut->devh);
 		}
 		else if (do_monitor) {
-			init_aa_log();
 			cmd_btle_monitor(ut->devh);
 		}
 

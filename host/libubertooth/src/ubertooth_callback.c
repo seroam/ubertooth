@@ -493,8 +493,10 @@ void cb_btle_monitor_adv(ubertooth_t* ut, void* args)
 	}
 
 	lell_print_adv(pkt);
-
-	//printf("\r%u packets parsed.", packets_received);
+	if (!lell_packet_is_data(pkt)){
+		lell_report_btle_adv(pkt);
+	}
+	
 
 	lell_packet_unref(pkt);
 
@@ -604,9 +606,6 @@ void cb_btle_monitor(ubertooth_t* ut, void* args)
 	time_t timestamp = time(NULL);
 	uint32_t aa = lell_get_access_address(pkt);
 	btbb_monitor_write_btle(aa, timestamp);
-	//lell_print_reduced(pkt);
-	log_aa(pkt);
-	//btbb_
 
 	printf("\r%u packets parsed.", packets_received);
 

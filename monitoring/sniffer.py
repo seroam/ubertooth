@@ -18,16 +18,21 @@ __status__  = "development"
 #__version__ = "0.1"
 #__date__    = ""
 
+def mac_bytes_to_str(mac: bytes) -> str:
+    return ':'.join(f'{byte:02x}' for byte in reversed(mac))
 
-
-class BtbrFingerprint:
-
+class BtFingerprint:
     def __init__(self):
         self.first_seen = int(time())
+        self.last_seen = self.first_seen
+
+class BtbrFingerprint(BtFingerprint):
+
+    def __init__(self):
+        BtFingerprint.__init__(self)
         self.uap = None
         self.lap = None
         self.nap = None
-        self.last_seen = self.first_seen
 
     def update(self, packet):
         if packet.flags & 0b1:
@@ -43,10 +48,9 @@ class BtbrFingerprint:
     def __str__(self):
         return f'{(self.uap if self.uap else 0):02x}{self.lap:06x} first_seen: {self.first_seen} last_seen: {self.last_seen}'
 
-class BtleFingerprint:
+class BtleFingerprint(BtFingerprint):
     def __init__(self):
-        self.first_seen = int(time())
-        self.last_seen = self.first_seen
+        BtFingerprint.__init__(self)
         self.aa = None
         self.times_seen = 0
 
@@ -63,16 +67,39 @@ class BtleFingerprint:
     def __str__(self):
         return f'{self.aa:06x} seen {self.times_seen} times, last_seen {self.last_seen}'
 
+class BtleAdvFingerprint(BtFingerprint):
+    def __init__(self):
+        BtFingerprint.__init__(self)
+        self.type = None
+        self.random = None
+        self.mac = None
+
+    def update(self, packet):
+        if new := self.mac == None:
+            self.mac = packet.mac
+
+        self.random = packet.random
+
+        self.last_seen = packet.timestamp
+
+        print(self)
+
+        return new
+
+    def __str__(self):
+        return f'{mac_bytes_to_str(self.mac)} random: {self.random} first_seen: {self.first_seen} last_seen: {self.last_seen}'
+
 class Processor:
 
     default_pipe = 'pipes/pipe'
     name = 'base'
 
-    def __init__(self, *, pipe_path = ""):
+    def __init__(self, *, pipe_path = "", callback=None):
         self._pipe = self._create_pipe(pipe_path)
         self._lock = threading.Lock()
         self._processing_thread = None
         self._running = False
+        self._callback = callback
 
     def _create_pipe(self, path: str) -> str:
 
@@ -104,10 +131,42 @@ class BtleAdvProcessor(Processor):
     default_pipe = 'pipes/btle-adv'
     name = 'btle-adv'
     _packet_length = 12
+    _fmt = 'B?6sI'
+    _Packet = namedtuple('Packet', ['type', 'random', 'mac', 'timestamp'])
 
-    def __init__(self, *, pipe_path=''):
+
+    def __init__(self, *, pipe_path='', callback=None):
         self.cmd = 'sleep 10'.split(' ')
-        Processor.__init__(self, pipe_path=pipe_path)
+        Processor.__init__(self, pipe_path=pipe_path, callback=callback)
+        self.cmd = f'ubertooth-btle -M {self._pipe}'.split(' ')
+        self._fingerprints = defaultdict(BtleAdvFingerprint)
+
+    def start(self):
+        self._running = True
+        self._processing_thread = threading.Thread(target=BtleAdvProcessor.process,
+                                                args=[self],
+                                                name=f'{self.name}.processor')
+        self._processing_thread.start()
+
+    def process(self):
+        log.debug("Started processing.")
+        with open(self._pipe, 'rb') as pipe:
+            while self._running:
+
+                try:
+                    packet = pipe.read(self._packet_length)
+                    data = self._Packet._make(struct.unpack(self._fmt, packet))
+                except struct.error:
+                    if not self._running:
+                        break
+                    else:
+                        raise
+
+                with self._lock:
+                    if self._fingerprints[data.mac].update(data):
+                        if self._callback: self._callback(self._fingerprints[data.mac])
+
+
 
 class BtleProcessor(Processor):
     default_pipe = 'pipes/btle'
@@ -117,11 +176,9 @@ class BtleProcessor(Processor):
     _Packet = namedtuple('Packet', ['aa', 'timestamp'])
 
     def __init__(self, *, pipe_path='', callback: Callable=None, seen_threshold=5):
-        self.cmd = 'sleep 7'.split(' ')
-        Processor.__init__(self, pipe_path=pipe_path)
+        Processor.__init__(self, pipe_path=pipe_path, callback=callback)
         self.cmd = f'ubertooth-btle -m {self._pipe}'.split(' ')
         self._fingerprints = defaultdict(BtleFingerprint)
-        self._callback = callback
         self.seen_threshold = seen_threshold
 
     def start(self):
@@ -136,8 +193,15 @@ class BtleProcessor(Processor):
 
         with open(self._pipe, 'rb') as pipe:
             while self._running:
-                packet = pipe.read(self._packet_length)
-                data = self._Packet._make(struct.unpack(self._fmt, packet))
+
+                try:
+                    packet = pipe.read(self._packet_length)
+                    data = self._Packet._make(struct.unpack(self._fmt, packet))
+                except struct.error:
+                    if not self._running:
+                        break
+                    else:
+                        raise
 
                 with self._lock:
                     if self._fingerprints[data.aa].update(data) >= self.seen_threshold:

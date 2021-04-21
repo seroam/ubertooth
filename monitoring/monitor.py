@@ -8,7 +8,7 @@ import threading
 import logging as log
 import sys
 import atexit
-from sniffer import Sniffer, BtbrProcessor, BtleProcessor, BtleAdvProcessor, BtbrFingerprint, BtleFingerprint
+from sniffer import Sniffer, BtbrProcessor, BtleProcessor, BtleAdvProcessor, BtbrFingerprint, BtleFingerprint, BtleAdvFingerprint
 from datetime import datetime, date
 from networking import RequestHandler, Method, Endpoint
 from contextlib import suppress
@@ -95,6 +95,9 @@ def report_btle_result(fingerprint: BtleFingerprint):
     data = dict(zip(keys, vals))
     RequestHandler.make_post_request(Endpoint.BTLE, data)'''
 
+def report_btle_adv_result(fingerprint: BtleAdvFingerprint):
+    log.debug(f'Received fingerprint {fingerprint}')
+
 def test_btbr_sniffer():
     btbr_sniffer = Sniffer(processor=BtbrProcessor(callback=report_btbr_result))
     btbr_sniffer.start()
@@ -115,6 +118,16 @@ def test_btle_sniffer():
 
     print(str(btle_sniffer))
 
+def test_btle_adv_sniffer():
+    btle_adv_sniffer = Sniffer(processor=BtleAdvProcessor(callback=report_btle_adv_result))
+    btle_adv_sniffer.start()
+
+    input('enter to stop')
+
+    btle_adv_sniffer.stop()
+
+    print(str(btle_adv_sniffer))
+
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Bluetooth Device Tracker.')
@@ -124,9 +137,11 @@ if __name__ == '__main__':
 
     RequestHandler()
 
-    #test_btbr_sniffer()
+    test_btbr_sniffer()
 
-    test_btle_sniffer()
+    #test_btle_sniffer()
+
+    #test_btle_adv_sniffer()
 
     
 
