@@ -492,7 +492,7 @@ void cb_btle_monitor_adv(ubertooth_t* ut, void* args)
 			refAA, pkt);
 	}
 
-	lell_print_adv(pkt);
+	//lell_print_adv(pkt);
 	if (!lell_packet_is_data(pkt)){
 		lell_report_btle_adv(pkt);
 	}
@@ -607,7 +607,7 @@ void cb_btle_monitor(ubertooth_t* ut, void* args)
 	uint32_t aa = lell_get_access_address(pkt);
 	btbb_monitor_write_btle(aa, timestamp);
 
-	printf("\r%u packets parsed.", packets_received);
+	//printf("\r%u packets parsed.", packets_received);
 
 	lell_packet_unref(pkt);
 
@@ -865,11 +865,10 @@ void cb_rx_monitor(ubertooth_t* ut)
 		systime = time(NULL);
 
 	btbb_monitor_write_btbr(0, 0, btbb_packet_get_lap(pkt), time(NULL));
-	// TODO: remove printf
-	printf("LAP=%06x systime=%u\n",
+	/*printf("LAP=%06x systime=%u\n",
 		btbb_packet_get_lap(pkt),
 		(uint32_t)time(NULL)
-	);
+	);*/
 
 	/* If dumpfile is specified, write out all banks to the
 	 * file. There could be duplicate data in the dump if more
