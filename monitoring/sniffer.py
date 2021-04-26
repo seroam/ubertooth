@@ -82,8 +82,6 @@ class BtleAdvFingerprint(BtFingerprint):
 
         self.last_seen = packet.timestamp
 
-        print(self)
-
         return new
 
     def __str__(self):
@@ -94,12 +92,14 @@ class Processor:
     default_pipe = 'pipes/pipe'
     name = 'base'
 
-    def __init__(self, *, pipe_path = "", callback=None):
+    def __init__(self, *, pipe_path = "", callback=None, ut_id=0):
         self._pipe = self._create_pipe(pipe_path)
         self._lock = threading.Lock()
         self._processing_thread = None
         self._running = False
         self._callback = callback
+        self._ut_id = ut_id
+        self._fingerprints = None
 
     def _create_pipe(self, path: str) -> str:
 
@@ -135,10 +135,9 @@ class BtleAdvProcessor(Processor):
     _Packet = namedtuple('Packet', ['type', 'random', 'mac', 'timestamp'])
 
 
-    def __init__(self, *, pipe_path='', callback=None):
-        self.cmd = 'sleep 10'.split(' ')
-        Processor.__init__(self, pipe_path=pipe_path, callback=callback)
-        self.cmd = f'ubertooth-btle -M {self._pipe}'.split(' ')
+    def __init__(self, *, pipe_path='', callback=None, ut_id=0):
+        Processor.__init__(self, pipe_path=pipe_path, callback=callback, ut_id=ut_id)
+        self.cmd = f'ubertooth-btle -M {self._pipe} -U {ut_id}'.split(' ')
         self._fingerprints = defaultdict(BtleAdvFingerprint)
 
     def start(self):
@@ -166,7 +165,9 @@ class BtleAdvProcessor(Processor):
                     if self._fingerprints[data.mac].update(data):
                         if self._callback: self._callback(self._fingerprints[data.mac])
 
-
+    def __str__(self):
+        with self._lock:
+            return '=== BTLE ADVERTISEMENT ===\n'+'\n'.join(f'{":".join(hex(int(byte)).replace("0x", "") for byte in reversed(k))}: {v}' for k, v in self._fingerprints.items() if v.last_seen-v.first_seen > 5)+f'\n{len(self._fingerprints)} results.'
 
 class BtleProcessor(Processor):
     default_pipe = 'pipes/btle'
@@ -175,9 +176,9 @@ class BtleProcessor(Processor):
     _fmt = 'II'
     _Packet = namedtuple('Packet', ['aa', 'timestamp'])
 
-    def __init__(self, *, pipe_path='', callback: Callable=None, seen_threshold=5):
-        Processor.__init__(self, pipe_path=pipe_path, callback=callback)
-        self.cmd = f'ubertooth-btle -m {self._pipe}'.split(' ')
+    def __init__(self, *, pipe_path='', callback: Callable=None, seen_threshold=5, ut_id=0):
+        Processor.__init__(self, pipe_path=pipe_path, callback=callback, ut_id=ut_id)
+        self.cmd = f'ubertooth-btle -m {self._pipe} -U {ut_id}'.split(' ')
         self._fingerprints = defaultdict(BtleFingerprint)
         self.seen_threshold = seen_threshold
 
@@ -207,6 +208,9 @@ class BtleProcessor(Processor):
                     if self._fingerprints[data.aa].update(data) >= self.seen_threshold:
                         if self._callback: self._callback(self._fingerprints[data.aa])
 
+    def __str__(self):
+        with self._lock:
+            return '=== BTLE ===\n'+'\n'.join(f'{k:06x}: {v}' for k, v in self._fingerprints.items() if v.times_seen >= self.seen_threshold)+f'\n{len(self._fingerprints)} results.'
 
 class BtbrProcessor(Processor):
     default_pipe = 'pipes/btbr'
@@ -215,9 +219,9 @@ class BtbrProcessor(Processor):
     _fmt = 'HBII'
     _Packet = namedtuple('Packet', ['flags', 'uap', 'lap', 'timestamp'])
 
-    def __init__(self, *, pipe_path='', callback: Callable=None):
-        Processor.__init__(self, pipe_path=pipe_path)
-        self.cmd = f'ubertooth-rx -m {self._pipe}'.split(' ')
+    def __init__(self, *, pipe_path='', callback: Callable=None, ut_id=0):
+        Processor.__init__(self, pipe_path=pipe_path, ut_id=ut_id)
+        self.cmd = f'ubertooth-rx -m {self._pipe} -U {ut_id}'.split(' ')
         self._fingerprints = defaultdict(BtbrFingerprint)
         self._callback = callback
         
@@ -247,14 +251,14 @@ class BtbrProcessor(Processor):
                     if self._fingerprints[data.lap].update(data):
                         if self._callback: self._callback(self._fingerprints[data.lap])
 
-    def __str__(self):
-        with self._lock:
-            return '\n'.join(f'{k:06x}: {v}' for k, v in self._fingerprints.items())
-
     @property
     def result(self):
         with self._lock:
             return self._fingerprints.values()
+
+    def __str__(self):
+        with self._lock:
+            return '=== BTBR ===\n'+'\n'.join(f'{k:06x}: {v}' for k, v in self._fingerprints.items())+f'\n{len(self._fingerprints)} results.'
 
 
 
@@ -286,10 +290,7 @@ class Sniffer:
 
     def _watch_subprocess(self):
         # TODO: Remove stdX pipes when interprocess pipes are working
-        process = subprocess.Popen(args=self._processor.cmd, 
-                            stdin=subprocess.PIPE,
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE)
+        process = subprocess.Popen(args=self._processor.cmd)
 
         while True:
             # Process exited
@@ -298,10 +299,7 @@ class Sniffer:
                 if self._running:
                     #TODO: Remove stdX pipes when interprocess pipes are working 
                     log.warning(f'Process exited unexpectedly with code {exit_code}. Restarting...')
-                    process = subprocess.Popen(args=self._processor.cmd,
-                                            stdin=subprocess.PIPE,
-                                            stdout=subprocess.PIPE,
-                                            stderr=subprocess.PIPE)
+                    process = subprocess.Popen(args=self._processor.cmd)
                 # Should not be running
                 else:
                     log.debug(f'Process exited with code {exit_code}')

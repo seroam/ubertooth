@@ -9,7 +9,7 @@ import datetime
 import logging as log
 from queue import Queue
 from enum import Enum, IntEnum, auto
-from threading import Thread
+import threading
 from collections import namedtuple
 from dataclasses import dataclass
 
@@ -52,6 +52,9 @@ class RequestHandler:
     __queue = None
     __sender_thread = None
 
+    
+    _cv = threading.Condition()
+
     @staticmethod
     def get_instance():
         ''' Static access method. '''
@@ -65,7 +68,7 @@ class RequestHandler:
         RequestHandler._hostname, RequestHandler._port = RequestHandler.__load_settings()
 
         RequestHandler.__queue = Queue(-1)
-        RequestHandler.__sender_thread = Thread(target=RequestHandler.__send, name="NETWORK", daemon=True)
+        RequestHandler.__sender_thread = threading.Thread(target=RequestHandler.__send, name="NETWORK", daemon=True)
         RequestHandler.__sender_thread.start()
 
         if RequestHandler.__instance != None:
@@ -78,41 +81,46 @@ class RequestHandler:
     def make_post_request(endpoint: Endpoint, data: dict):
 
         request = Request(method=Method.POST, endpoint=endpoint.value, data=json.dumps(data))
-        RequestHandler.__queue.put_nowait(request)
+
+        with RequestHandler._cv:
+            RequestHandler.__queue.put_nowait(request)
+            RequestHandler._cv.notify_all()
 
     @staticmethod
     def __send():
-        while True:
-            if not RequestHandler.__queue.empty():
-                log.debug('Grabbing request...')
-                request = RequestHandler.__queue.get()
+        with RequestHandler._cv:
+            while True:
+                RequestHandler._cv.wait()
+                if not RequestHandler.__queue.empty():
+                    log.debug('Grabbing request...')
+                    request = RequestHandler.__queue.get()
 
-                if request.method == Method.GET:
-                    headers = {'Accept': 'text/plain'}
-                    response = requests.get( url=f'https://{RequestHandler._hostname}:{RequestHandler._port}/api/{request.endpoint}',
-                                            headers=headers,
-                                            verify=RequestHandler._verify )
+                    if request.method == Method.GET:
+                        headers = {'Accept': 'text/plain'}
+                        response = requests.get( url=f'https://{RequestHandler._hostname}:{RequestHandler._port}/api/{request.endpoint}',
+                                                headers=headers,
+                                                verify=RequestHandler._verify )
 
-                elif request.method == Method.POST:
-                    headers = {'Accept': 'text/plain', 'Content-Type': 'application/json'}
-                    response = requests.post( url=f'https://{RequestHandler._hostname}:{RequestHandler._port}/api/{request.endpoint}',
-                                            headers=headers,
-                                            data=request.data,
-                                            verify=RequestHandler._verify )
+                    elif request.method == Method.POST:
+                        headers = {'Accept': 'text/plain', 'Content-Type': 'application/json'}
+                        response = requests.post( url=f'https://{RequestHandler._hostname}:{RequestHandler._port}/api/{request.endpoint}',
+                                                headers=headers,
+                                                data=request.data,
+                                                verify=RequestHandler._verify )
 
-                elif request.method == Method.PUT:
-                    raise NotImplementedError(f'Method {request.method} not implemented.')
-                elif request.method == Method.DELETE:
-                    raise NotImplementedError(f'Method {request.method} not implemented.')
-                else:
-                    raise NotImplementedError(f'Unknown method: {request.method}.')
+                    elif request.method == Method.PUT:
+                        raise NotImplementedError(f'Method {request.method} not implemented.')
+                    elif request.method == Method.DELETE:
+                        raise NotImplementedError(f'Method {request.method} not implemented.')
+                    else:
+                        raise NotImplementedError(f'Unknown method: {request.method}.')
 
-                
-                if response.ok:
-                    log.debug(f'Response ({response.status_code})\n{response.content}')
-                else:
-                    log.debug(f'Response ({response.status_code})')
-                    RequestHandler.__queue.put_nowait(request)
+                    
+                    if response.ok:
+                        log.debug(f'Response ({response.status_code})\n{response.content}')
+                    else:
+                        log.debug(f'Response ({response.status_code})')
+                        RequestHandler.__queue.put_nowait(request)
     
     @staticmethod
     def __load_settings():
@@ -148,7 +156,7 @@ if __name__ == '__main__':
     data = dict(zip(dict_keys, dict_vals))
 
     request_handler = RequestHandler()
-    request_handler.make_post_request(Endpoint.BTBR, data)
+    #request_handler.make_post_request(Endpoint.BTBR, data)
 
 
     input()

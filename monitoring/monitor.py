@@ -72,7 +72,7 @@ def test_api_btbr_post():
 
 
 def report_btbr_result(fingerprint: BtbrFingerprint):
-    log.debug(f'Received fingerprint {fingerprint}')
+    pass#log.debug(f'Received fingerprint {fingerprint}')
     keys = ['uap', 'lap', 'nap', 'timestamp', 'antenna']
     vals = [f'{fingerprint.uap:02x}' if fingerprint.uap != None else '00',
             f'{fingerprint.lap:06x}',
@@ -96,7 +96,7 @@ def report_btle_result(fingerprint: BtleFingerprint):
     RequestHandler.make_post_request(Endpoint.BTLE, data)'''
 
 def report_btle_adv_result(fingerprint: BtleAdvFingerprint):
-    log.debug(f'Received fingerprint {fingerprint}')
+    pass#log.debug(f'Received fingerprint {fingerprint}')
 
 def test_btbr_sniffer():
     btbr_sniffer = Sniffer(processor=BtbrProcessor(callback=report_btbr_result))
@@ -128,20 +128,65 @@ def test_btle_adv_sniffer():
 
     print(str(btle_adv_sniffer))
 
+def num_uberteeth():
+    process = subprocess.Popen(args='ubertooth-util -N'.split(' '),
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE)
+
+    out, err = process.communicate()
+    if err:
+        log.critical('Unable to determine number of uberteeth. Exiting.')
+        sys.exit(-1)
+
+    uberteeth = int(out.decode('utf-8').replace('\n', ''))
+
+    return uberteeth
+
+def test_two_sniffers():
+
+    if num_uberteeth() < 2:
+        raise ResourceWarning('Too few Uberteeth connected.')
+
+    btbr_sniffer = Sniffer(processor=BtbrProcessor(callback=report_btbr_result, ut_id=0))
+    btle_adv_sniffer = Sniffer(processor=BtleAdvProcessor(callback=report_btle_adv_result, ut_id=1))
+    btbr_sniffer.start()
+    btle_adv_sniffer.start()
+
+    input("Enter to stop")
+
+    btbr_sniffer.stop()
+    btle_adv_sniffer.stop()
+
+    print(btbr_sniffer)
+    print(btle_adv_sniffer)
+
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Bluetooth Device Tracker.')
+
+    parser.add_argument_group('Operating modes', 'One or more of these operating modes must be selected. One Ubertooth One device is required per mode.')
+    parser.add_argument('-l', '--btle', help='Bluetooth Low Energy sniffing. Keeps track of Access Addresses on a data channel.')
+    
+    parser.add_argument('-a', '--adv', help='Bluetooth Low Energy Advertisement sniffing. Keeps track of MAC addresses in BTLE advertisements.')
+    parser.add_argument('-c', '--btbr', help='Bluetooth BR/EDR sniffing. Keeps track of BDADDRs.')
+
+    args = parser.parse_args()
 
     log_path = f'./logs/{date.today()}.log'
     init_log(log_path)
 
     RequestHandler()
 
-    test_btbr_sniffer()
+    #num_devices = num_uberteeth()
+
+    #test_btbr_sniffer()
 
     #test_btle_sniffer()
 
-    #test_btle_adv_sniffer()
+    test_btle_adv_sniffer()
+
+    #test_two_sniffers()
+
 
     
 
