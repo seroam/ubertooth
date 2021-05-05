@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.8
 
 # sudo dpkg-reconfigure ca-certificates
 # mozilla/VeriSign_Universal_Root_Certification_Authority.crt

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.9
+#!/usr/bin/env python3.8
 
 import os
 import subprocess
@@ -160,22 +160,53 @@ def test_two_sniffers():
     print(btbr_sniffer)
     print(btle_adv_sniffer)
 
+def create_sniffers(modes: list):
+
+    sniffers = []
+
+    for i, mode in enumerate(modes):
+        if mode == 'btbr':
+            sniffers.append(Sniffer(processor=BtbrProcessor(callback=report_btbr_result, ut_id=i)))
+        elif mode == 'btle':
+            sniffers.append(Sniffer(processor=BtleProcessor(callback=report_btle_result, ut_id=i)))
+        elif mode == 'btle-adv':
+            sniffers.append(Sniffer(processor=BtleAdvProcessor(callback=report_btle_adv_result, ut_id=i)))
+        else:
+            log.error(f'Unrecognized operating mode: {mode}.')
+            exit(0)
+
+    return sniffers
+
 if __name__ == '__main__':
-
-    parser = argparse.ArgumentParser(description='Bluetooth Device Tracker.')
-
-    parser.add_argument_group('Operating modes', 'One or more of these operating modes must be selected. One Ubertooth One device is required per mode.')
-    parser.add_argument('-l', '--btle', help='Bluetooth Low Energy sniffing. Keeps track of Access Addresses on a data channel.')
-    
-    parser.add_argument('-a', '--adv', help='Bluetooth Low Energy Advertisement sniffing. Keeps track of MAC addresses in BTLE advertisements.')
-    parser.add_argument('-c', '--btbr', help='Bluetooth BR/EDR sniffing. Keeps track of BDADDRs.')
-
-    args = parser.parse_args()
 
     log_path = f'./logs/{date.today()}.log'
     init_log(log_path)
 
+    parser = argparse.ArgumentParser(description='Bluetooth Device Tracker.')
+
+    parser.add_argument('modes', metavar='modes', type=str, nargs='+',
+                        help='Operating modes. One or more of btbr, btle, btle-adv. On Ubertooth is required per mode.')
+
+    args = parser.parse_args()
+
+    if (required := len(args.modes)) > (present := num_uberteeth()):
+        log.critical(f'Too few Uberteeth connected. {required} required, {present} present.')
+        sys.exit(-1)
+    
     RequestHandler()
+
+    sniffers = create_sniffers(args.modes)
+
+    for sniffer in sniffers:
+        sniffer.start()
+
+    input("Enter to stop")
+
+    for sniffer in sniffers:
+        sniffer.stop()
+
+    for sniffer in sniffers:
+        print(sniffer)
 
     #num_devices = num_uberteeth()
 
@@ -183,7 +214,7 @@ if __name__ == '__main__':
 
     #test_btle_sniffer()
 
-    test_btle_adv_sniffer()
+    #test_btle_adv_sniffer()
 
     #test_two_sniffers()
 
