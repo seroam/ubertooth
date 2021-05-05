@@ -45,22 +45,6 @@ def init_log(log_path: str) -> None:
         ]
     )
 
-def test_sniffers():
-    # Threading subprocess
-    sniffer1 = Sniffer(processor=BtbrProcessor())
-    #sniffer2 = Sniffer(BtleProcessor())
-    #sniffer3 = Sniffer(BtleAdvProcessor())
-
-    sniffer1.start()
-    #sniffer2.start()
-    #sniffer3.start()
-
-    print('Sniffers started.')
-    input()
-    sniffer1.stop()
-    #sniffer2.stop()
-    #sniffer3.stop()
-
 def test_api_btbr_post():
     # Networking
     dict_keys = ['uap', 'lap', 'nap', 'timestamp', 'antenna']
@@ -98,36 +82,6 @@ def report_btle_result(fingerprint: BtleFingerprint):
 def report_btle_adv_result(fingerprint: BtleAdvFingerprint):
     pass#log.debug(f'Received fingerprint {fingerprint}')
 
-def test_btbr_sniffer():
-    btbr_sniffer = Sniffer(processor=BtbrProcessor(callback=report_btbr_result))
-    btbr_sniffer.start()
-
-    input("enter to stop")
-
-    btbr_sniffer.stop()
-
-    print(str(btbr_sniffer))
-
-def test_btle_sniffer():
-    btle_sniffer = Sniffer(processor=BtleProcessor(callback=report_btle_result))
-    btle_sniffer.start()
-
-    input("enter to stop")
-
-    btle_sniffer.stop()
-
-    print(str(btle_sniffer))
-
-def test_btle_adv_sniffer():
-    btle_adv_sniffer = Sniffer(processor=BtleAdvProcessor(callback=report_btle_adv_result))
-    btle_adv_sniffer.start()
-
-    input('enter to stop')
-
-    btle_adv_sniffer.stop()
-
-    print(str(btle_adv_sniffer))
-
 def num_uberteeth():
     process = subprocess.Popen(args='ubertooth-util -N'.split(' '),
                             stdout=subprocess.PIPE,
@@ -141,24 +95,6 @@ def num_uberteeth():
     uberteeth = int(out.decode('utf-8').replace('\n', ''))
 
     return uberteeth
-
-def test_two_sniffers():
-
-    if num_uberteeth() < 2:
-        raise ResourceWarning('Too few Uberteeth connected.')
-
-    btbr_sniffer = Sniffer(processor=BtbrProcessor(callback=report_btbr_result, ut_id=0))
-    btle_adv_sniffer = Sniffer(processor=BtleAdvProcessor(callback=report_btle_adv_result, ut_id=1))
-    btbr_sniffer.start()
-    btle_adv_sniffer.start()
-
-    input("Enter to stop")
-
-    btbr_sniffer.stop()
-    btle_adv_sniffer.stop()
-
-    print(btbr_sniffer)
-    print(btle_adv_sniffer)
 
 def create_sniffers(modes: list):
 
@@ -208,15 +144,6 @@ if __name__ == '__main__':
     for sniffer in sniffers:
         print(sniffer)
 
-    #num_devices = num_uberteeth()
-
-    #test_btbr_sniffer()
-
-    #test_btle_sniffer()
-
-    #test_btle_adv_sniffer()
-
-    #test_two_sniffers()
 
 
     
