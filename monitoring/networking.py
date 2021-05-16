@@ -11,7 +11,7 @@ from queue import Queue
 from enum import Enum, IntEnum, auto
 import threading
 from collections import namedtuple
-from dataclasses import dataclass
+from time import sleep
 
 __all__ = ['Endpoint', 'Method', 'RequestHandler']
 
@@ -27,6 +27,8 @@ class Endpoint(Enum):
     BTBR = 'Btbr'
     BTLE = 'Btle'
     MAC = 'MacAddr'
+    ID = 'Antenna'
+    ANTENNA = 'AntennaMetadata'
 
 class Method(IntEnum):
     GET = 0
@@ -35,10 +37,12 @@ class Method(IntEnum):
     DELETE = 3
 
 class Request:
-    def __init__(self, method: Method, endpoint: Endpoint, data: dict=None):
+    def __init__(self, method: Method, endpoint: Endpoint, data: dict=None, cb_success=None, cb_error=None):
         self.method = method
         self.endpoint = endpoint
         self.data = data
+        self.cb_success = cb_success
+        self.cb_error = cb_error
 
 class RequestHandler:
 
@@ -51,6 +55,10 @@ class RequestHandler:
     _port = None
     __queue = None
     __sender_thread = None
+
+    __successtive_fails = 0
+
+    __delaying = False
 
     
     _cv = threading.Condition()
@@ -78,49 +86,67 @@ class RequestHandler:
 
         
     @staticmethod
-    def make_post_request(endpoint: Endpoint, data: dict):
+    def make_post_request(endpoint: Endpoint, data: dict, cb_success=None, cb_error=None):
 
-        request = Request(method=Method.POST, endpoint=endpoint.value, data=json.dumps(data))
+        request = Request(method=Method.POST, endpoint=endpoint.value, data=json.dumps(data), cb_success=cb_success, cb_error=cb_error)
+        RequestHandler.__queue.put_nowait(request)
+
+    @staticmethod
+    def __retry_send():
+        RequestHandler.__delaying = False
 
         with RequestHandler._cv:
-            RequestHandler.__queue.put_nowait(request)
+            log.debug("Retrying send")
             RequestHandler._cv.notify_all()
 
     @staticmethod
     def __send():
-        with RequestHandler._cv:
-            while True:
-                RequestHandler._cv.wait()
-                if not RequestHandler.__queue.empty():
-                    log.debug('Grabbing request...')
-                    request = RequestHandler.__queue.get()
+        while True:
 
-                    if request.method == Method.GET:
-                        headers = {'Accept': 'text/plain'}
-                        response = requests.get( url=f'https://{RequestHandler._hostname}:{RequestHandler._port}/api/{request.endpoint}',
-                                                headers=headers,
-                                                verify=RequestHandler._verify )
+            log.debug('Grabbing request...')
+            if RequestHandler.__delaying:
+                with RequestHandler._cv:
+                    RequestHandler._cv.wait()
 
-                    elif request.method == Method.POST:
-                        headers = {'Accept': 'text/plain', 'Content-Type': 'application/json'}
-                        response = requests.post( url=f'https://{RequestHandler._hostname}:{RequestHandler._port}/api/{request.endpoint}',
-                                                headers=headers,
-                                                data=request.data,
-                                                verify=RequestHandler._verify )
+            request = RequestHandler.__queue.get()
 
-                    elif request.method == Method.PUT:
-                        raise NotImplementedError(f'Method {request.method} not implemented.')
-                    elif request.method == Method.DELETE:
-                        raise NotImplementedError(f'Method {request.method} not implemented.')
-                    else:
-                        raise NotImplementedError(f'Unknown method: {request.method}.')
+            if request.method == Method.POST:
+                headers = {'Accept': 'text/plain', 'Content-Type': 'application/json'}
+                response = requests.post( url=f'https://{RequestHandler._hostname}:{RequestHandler._port}/api/{request.endpoint}',
+                                        headers=headers,
+                                        data=request.data,
+                                        verify=RequestHandler._verify )
+            elif request.method == Method.GET:
+                raise NotImplementedError(f'Method {request.method} not implemented.')
+            elif request.method == Method.PUT:
+                raise NotImplementedError(f'Method {request.method} not implemented.')
+            elif request.method == Method.DELETE:
+                raise NotImplementedError(f'Method {request.method} not implemented.')
+            else:
+                raise NotImplementedError(f'Unknown method: {request.method}.')
 
                     
-                    if response.ok:
-                        log.debug(f'Response ({response.status_code})\n{response.content}')
-                    else:
-                        log.debug(f'Response ({response.status_code})')
-                        RequestHandler.__queue.put_nowait(request)
+            if response.ok:
+                log.debug(f'Response ({response.status_code})\n{response.content}')
+                RequestHandler.__successtive_fails = 0
+                if (request.cb_success) : request.cb_success(response.content)
+            else:
+                log.debug(f'Response ({response.status_code})')
+                RequestHandler.__queue.put_nowait(request)
+
+                if request.cb_error: request.cb_error(response.content)
+                
+                RequestHandler.__successtive_fails += 1
+
+                # If we've failed to send a message five times in a row, sleep for 10 seconds.
+                if RequestHandler.__successtive_fails >= 5:
+                    log.warning(f"Failed to send a request {RequestHandler.__successtive_fails} times in a row. Waiting for 10 seconds before retry.")
+                    RequestHandler.__delaying = True
+
+                    retry_delay = threading.Timer(10, RequestHandler.__retry_send)
+                    retry_delay.start()
+
+
     
     @staticmethod
     def __load_settings():
