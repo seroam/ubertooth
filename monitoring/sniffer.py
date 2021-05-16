@@ -10,8 +10,9 @@ from contextlib import suppress
 from collections import namedtuple, defaultdict
 from collections.abc import Callable
 import struct
+import math
 
-__all__ = ['Sniffer', 'BtbrProcessor', 'BtleProcessor', 'BtleAdvProcessor', 'BtbrFingerprint']
+__all__ = ['Sniffer', 'BtbrProcessor', 'BtleProcessor', 'BtleAdvProcessor', 'BtbrFingerprint', 'mac_bytes_to_str']
 
 __author__ = "Severin Marti <severin.marti@ost.ch"
 __status__  = "development"
@@ -20,6 +21,26 @@ __status__  = "development"
 
 def mac_bytes_to_str(mac: bytes) -> str:
     return ':'.join(f'{byte:02x}' for byte in reversed(mac))
+
+class Std:
+    def __init__(self):
+        self.mean = 0
+        self._n = 0
+        self.std = 0
+
+    def update_std(self, value: int):
+        if self._n == 0:
+            self.mean = value
+            self.std = 0
+            self._n += 1
+            return
+
+        new_mean = (self._n*self.mean + value) / (self._n+1)
+        new_std = math.sqrt((self._n*(self.std**2 + (new_mean-self.mean) ** 2) + (new_mean-value)**2) / (self._n+1))
+        self.mean = new_mean
+        self.std = new_std
+        self._n += 1
+    
 
 class BtFingerprint:
     def __init__(self):
@@ -48,15 +69,20 @@ class BtbrFingerprint(BtFingerprint):
     def __str__(self):
         return f'{(self.uap if self.uap else 0):02x}{self.lap:06x} first_seen: {self.first_seen} last_seen: {self.last_seen}'
 
-class BtleFingerprint(BtFingerprint):
+class BtleFingerprint(BtFingerprint, Std):
     def __init__(self):
+        Std.__init__(self)
         BtFingerprint.__init__(self)
         self.aa = None
         self.times_seen = 0
+        self.rssi = None
 
     def update(self, packet):
         if self.aa == None:
             self.aa = packet.aa
+
+        self.rssi = packet.rssi
+        self.update_std(packet.rssi)
 
         self.times_seen += 1
 
@@ -65,18 +91,23 @@ class BtleFingerprint(BtFingerprint):
         return self.times_seen
 
     def __str__(self):
-        return f'{self.aa:06x} seen {self.times_seen} times, last_seen {self.last_seen}'
+        return f'{self.aa:06x} seen {self.times_seen} times, last_seen {self.last_seen}, rssi: {self.rssi}, mean: {self.mean}, std: {self.std}'
 
-class BtleAdvFingerprint(BtFingerprint):
+class BtleAdvFingerprint(BtFingerprint, Std):
     def __init__(self):
+        Std.__init__(self)
         BtFingerprint.__init__(self)
         self.type = None
         self.random = None
         self.mac = None
+        self.rssi = None
 
     def update(self, packet):
         if new := self.mac == None:
             self.mac = packet.mac
+
+        self.rssi = packet.rssi
+        self.update_std(packet.rssi)
 
         self.random = packet.random
 
@@ -85,7 +116,7 @@ class BtleAdvFingerprint(BtFingerprint):
         return new
 
     def __str__(self):
-        return f'{mac_bytes_to_str(self.mac)} random: {self.random} first_seen: {self.first_seen} last_seen: {self.last_seen}'
+        return f'{mac_bytes_to_str(self.mac)} random: {self.random} first_seen: {self.first_seen} last_seen: {self.last_seen}, rssi: {self.rssi}, mean: {self.mean}, std: {self.std}'
 
 class Processor:
 
@@ -100,6 +131,7 @@ class Processor:
         self._callback = callback
         self._ut_id = ut_id
         self._fingerprints = None
+        self._last_reported = int(time())
 
     def _create_pipe(self, path: str) -> str:
 
@@ -130,9 +162,9 @@ class Processor:
 class BtleAdvProcessor(Processor):
     default_pipe = 'pipes/btle-adv'
     name = 'btle-adv'
-    _packet_length = 12
-    _fmt = 'B?6sI'
-    _Packet = namedtuple('Packet', ['type', 'random', 'mac', 'timestamp'])
+    _packet_length = 16
+    _fmt = 'B?6sIi'
+    _Packet = namedtuple('Packet', ['type', 'random', 'mac', 'timestamp', 'rssi'])
 
 
     def __init__(self, *, pipe_path='', callback=None, ut_id=0):
@@ -163,7 +195,23 @@ class BtleAdvProcessor(Processor):
 
                 with self._lock:
                     if self._fingerprints[data.mac].update(data):
-                        if self._callback: self._callback(self._fingerprints[data.mac])
+                        pass#if self._callback: self._callback(self._fingerprints[data.mac])
+
+    @property
+    def result(self):
+        with self._lock:
+
+            now = int(time())
+
+            self._fingerprints = defaultdict(BtleAdvFingerprint, { key: value
+                                    for key, value in self._fingerprints.items()
+                                    if value.last_seen >= self._last_reported })
+
+            self._last_reported = now
+
+            return [ value
+                    for value in self._fingerprints.values()
+                    if value.last_seen-value.first_seen > 5]
 
     def __str__(self):
         with self._lock:
@@ -172,9 +220,9 @@ class BtleAdvProcessor(Processor):
 class BtleProcessor(Processor):
     default_pipe = 'pipes/btle'
     name = 'btle'
-    _packet_length = 8
-    _fmt = 'II'
-    _Packet = namedtuple('Packet', ['aa', 'timestamp'])
+    _packet_length = 12
+    _fmt = 'IIi'
+    _Packet = namedtuple('Packet', ['aa', 'timestamp', 'rssi'])
 
     def __init__(self, *, pipe_path='', callback: Callable=None, seen_threshold=5, ut_id=0):
         Processor.__init__(self, pipe_path=pipe_path, callback=callback, ut_id=ut_id)
@@ -206,7 +254,21 @@ class BtleProcessor(Processor):
 
                 with self._lock:
                     if self._fingerprints[data.aa].update(data) >= self.seen_threshold:
-                        if self._callback: self._callback(self._fingerprints[data.aa])
+                        pass#if self._callback: self._callback(self._fingerprints[data.aa])
+    @property
+    def result(self):
+        with self._lock:
+            now = int(time())
+
+            self._fingerprints = defaultdict(BtleFingerprint, { key: value
+                                    for key, value in self._fingerprints.items()
+                                    if value.last_seen >= self._last_reported })
+
+            self._last_reported = now
+
+            return [ value
+                    for value in self._fingerprints.values()
+                    if value.times_seen >= self.seen_threshold ]
 
     def __str__(self):
         with self._lock:
@@ -235,33 +297,38 @@ class BtbrProcessor(Processor):
 
     def process(self):
         log.debug("Started processing.")
-        with open(self._pipe, 'rb') as pipe:
-            while self._running:
+        while self._running:
+            with open(self._pipe, 'rb') as pipe:
+                while self._running:
 
-                try:
-                    packet = pipe.read(self._packet_length)
-                    data = self._Packet._make(struct.unpack(self._fmt, packet))
-                except struct.error:
-                    if not self._running:
+                    try:
+                        packet = pipe.read(self._packet_length)
+                        data = self._Packet._make(struct.unpack(self._fmt, packet))
+                    except struct.error:
                         break
-                    else:
-                        raise
 
-                with self._lock:
-                    if self._fingerprints[data.lap].update(data):
-                        if self._callback: self._callback(self._fingerprints[data.lap])
+                    with self._lock:
+                        if self._fingerprints[data.lap].update(data):
+                            pass#if self._callback: self._callback(self._fingerprints[data.lap])
 
     @property
     def result(self):
         with self._lock:
-            return self._fingerprints.values()
+
+            now = int(time())
+
+            self._fingerprints = defaultdict(BtbrFingerprint, { key: value
+                                    for key, value in self._fingerprints.items()
+                                    if value.last_seen >= self._last_reported
+            })
+
+            self._last_reported = now
+
+            return list(self._fingerprints.values())
 
     def __str__(self):
         with self._lock:
             return '=== BTBR ===\n'+'\n'.join(f'{k:06x}: {v}' for k, v in self._fingerprints.items())+f'\n{len(self._fingerprints)} results.'
-
-
-
 
 class Sniffer:
 
@@ -289,7 +356,6 @@ class Sniffer:
         self._watcher_thread.join()
 
     def _watch_subprocess(self):
-        # TODO: Remove stdX pipes when interprocess pipes are working
         process = subprocess.Popen(args=self._processor.cmd)
 
         while True:
@@ -297,7 +363,6 @@ class Sniffer:
             if (exit_code := process.poll()) is not None:
                 # Should be running
                 if self._running:
-                    #TODO: Remove stdX pipes when interprocess pipes are working 
                     log.warning(f'Process exited unexpectedly with code {exit_code}. Restarting...')
                     process = subprocess.Popen(args=self._processor.cmd)
                 # Should not be running
