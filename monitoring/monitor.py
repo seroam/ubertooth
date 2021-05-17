@@ -7,41 +7,41 @@ import argparse
 import threading
 import logging as log
 import sys
-import atexit
-from sniffer import Sniffer, BtbrProcessor, BtleProcessor, BtleAdvProcessor, BtbrFingerprint, BtleFingerprint, BtleAdvFingerprint, mac_bytes_to_str
-from datetime import datetime, date
-from networking import RequestHandler, Method, Endpoint
-from contextlib import suppress
+from datetime import date
 import json
 import getmac
+from sniffer import Sniffer, BtbrProcessor, BtleProcessor, BtleAdvProcessor, \
+    BtbrFingerprint, BtleFingerprint, BtleAdvFingerprint, mac_bytes_to_str
+from networking import RequestHandler, Endpoint
 
-antenna = 0
+ANTENNA = 0
 cv = threading.Condition()
 
 class LevelFilter(log.Filter):
     def __init__(self, low: int, high: int = None):
+        super().__init__()
         self.__low = low
         self.__high = high if high else log.CRITICAL
 
     def filter(self, record: log.LogRecord) -> bool:
         return self.__low <= record.levelno <= self.__high
 
-def init_log(log_path: str) -> None:
+def init_log(path: str) -> None:
 
     # Create log directory if necessary
-    os.makedirs(os.path.dirname(log_path), mode=0o700, exist_ok=True)
+    os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
 
     stdout_handler = log.StreamHandler(sys.stdout)
     stdout_handler.addFilter(LevelFilter(log.NOTSET, log.WARNING))
     stderr_handler = log.StreamHandler(sys.stderr)
     stderr_handler.addFilter(LevelFilter(log.ERROR))
-    
+
     log.basicConfig(
         level=log.DEBUG,
         format='%(asctime)s [%(threadName)s] [%(levelname)s] %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S',
         handlers=[
-            log.FileHandler(log_path),       
+            log.FileHandler(path),
             stdout_handler,
             stderr_handler
         ]
@@ -49,31 +49,33 @@ def init_log(log_path: str) -> None:
 
 def report_btbr_result(fingerprint: BtbrFingerprint):
     keys = ['uap', 'lap', 'nap', 'firstSeen', 'lastSeen', 'antennaId']
-    vals = [f'{fingerprint.uap:02x}' if fingerprint.uap != None else '00',
+    vals = [f'{fingerprint.uap:02x}' if fingerprint.uap is not None else '00',
             f'{fingerprint.lap:06x}',
-            f'{fingerprint.nap:04x}' if fingerprint.nap != None else '0000',
+            f'{fingerprint.nap:04x}' if fingerprint.nap is not None else '0000',
             fingerprint.first_seen,
             fingerprint.last_seen,
-            antenna]
-        
+            ANTENNA]
+
     data = dict(zip(keys, vals))
     RequestHandler.make_post_request(Endpoint.BTBR, data)
 
 def report_btle_result(fingerprint: BtleFingerprint):
     keys = ['accessAddress', 'rssi', 'std', 'mean', 'firstSeen', 'lastSeen', 'antennaId']
-    vals = [fingerprint.aa, fingerprint.rssi, fingerprint.std, fingerprint.mean, fingerprint.first_seen, fingerprint.last_seen, antenna]
+    vals = [f'{fingerprint.aa:06X}', fingerprint.rssi, fingerprint.std, fingerprint.mean,
+            fingerprint.first_seen, fingerprint.last_seen, ANTENNA]
 
     data = dict(zip(keys, vals))
     RequestHandler.make_post_request(Endpoint.BTLE, data)
-    log.debug(f'Received fingerprint {fingerprint}')
+    log.debug('Received fingerprint %s', fingerprint)
 
 def report_btle_adv_result(fingerprint: BtleAdvFingerprint):
     keys = ['macAddress', 'rssi', 'std', 'mean', 'firstSeen', 'lastSeen', 'antennaId']
-    vals = [mac_bytes_to_str(fingerprint.mac), fingerprint.rssi, fingerprint.std, fingerprint.mean, fingerprint.first_seen, fingerprint.last_seen, antenna]
+    vals = [mac_bytes_to_str(fingerprint.mac), fingerprint.rssi, fingerprint.std, fingerprint.mean,
+            fingerprint.first_seen, fingerprint.last_seen, ANTENNA]
 
     data = dict(zip(keys, vals))
     RequestHandler.make_post_request(Endpoint.MAC, data)
-    log.debug(f'Received fingerprint {fingerprint}')
+    log.debug('Received fingerprint %s', fingerprint)
 
 def num_uberteeth():
     process = subprocess.Popen(args='ubertooth-util -N'.split(' '),
@@ -99,10 +101,11 @@ def create_sniffers(modes: list):
         elif mode == 'btle':
             sniffers.append(Sniffer(processor=BtleProcessor(callback=report_btle_result, ut_id=i)))
         elif mode == 'btle-adv':
-            sniffers.append(Sniffer(processor=BtleAdvProcessor(callback=report_btle_adv_result, ut_id=i)))
+            sniffers.append(Sniffer(processor=BtleAdvProcessor(callback=report_btle_adv_result,
+                                                               ut_id=i)))
         else:
-            log.error(f'Unrecognized operating mode: {mode}.')
-            exit(0)
+            log.error('Unrecognized operating mode: %s.', mode)
+            sys.exit(-1)
 
     return sniffers
 
@@ -133,7 +136,7 @@ def report_location(interval: int):
 
     for coordinates in get_location():
         coordinates.append(int(time()))
-        coordinates.append(antenna)
+        coordinates.append(ANTENNA)
 
         data = dict(zip(keys, coordinates))
 
@@ -155,8 +158,11 @@ def get_antenna_id():
 
 def set_antenna_id(response: bytes):
     data = json.loads(response.decode())
-    global antenna
-    antenna = data['antennaId']
+    global ANTENNA
+    ANTENNA = data['antennaId']
+
+    log.debug('Received antenna id %i', ANTENNA)
+
     with cv:
         cv.notify_all()
 
@@ -168,22 +174,21 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Bluetooth Device Tracker.')
 
     parser.add_argument('modes', metavar='modes', type=str, nargs='+',
-                        help='Operating modes. One or more of btbr, btle, btle-adv. On Ubertooth is required per mode.')
+                        help='Operating modes. One or more of btbr, btle, btle-adv. \
+                              One Ubertooth is required per mode.')
 
     args = parser.parse_args()
 
     if (required := len(args.modes)) > (present := num_uberteeth()):
-        log.critical(f'Too few Uberteeth connected. {required} required, {present} present.')
+        log.critical('Too few Uberteeth connected. %i required, %i present.', required, present)
         print(f'Too few Uberteeth connected. {required} required, {present} present.')
         sys.exit(-1)
-    
+
     RequestHandler()
 
     get_antenna_id()
     with cv:
         cv.wait()
-
-    log.debug(f'Received antenna id {antenna}')
 
     sniffers = create_sniffers(args.modes)
 
@@ -202,7 +207,6 @@ if __name__ == '__main__':
                                         daemon=True)
     reporting_thread.start()
 
-
     input("Enter to stop")
 
     for sniffer in sniffers:
@@ -210,9 +214,3 @@ if __name__ == '__main__':
 
     for sniffer in sniffers:
         print(sniffer)
-
-
-
-    
-
-    

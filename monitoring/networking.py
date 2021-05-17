@@ -3,15 +3,13 @@
 # sudo dpkg-reconfigure ca-certificates
 # mozilla/VeriSign_Universal_Root_Certification_Authority.crt
 
-import requests
 import json
 import datetime
 import logging as log
 from queue import Queue
-from enum import Enum, IntEnum, auto
+from enum import Enum, IntEnum
 import threading
-from collections import namedtuple
-from time import sleep
+import requests
 
 __all__ = ['Endpoint', 'Method', 'RequestHandler']
 
@@ -37,7 +35,8 @@ class Method(IntEnum):
     DELETE = 3
 
 class Request:
-    def __init__(self, method: Method, endpoint: Endpoint, data: dict=None, cb_success=None, cb_error=None):
+    def __init__(self, method: Method, endpoint: Endpoint,
+                 data: dict=None, cb_success=None, cb_error=None):
         self.method = method
         self.endpoint = endpoint
         self.data = data
@@ -60,13 +59,12 @@ class RequestHandler:
 
     __delaying = False
 
-    
     _cv = threading.Condition()
 
     @staticmethod
     def get_instance():
         ''' Static access method. '''
-        if RequestHandler.__instance == None:
+        if RequestHandler.__instance is None:
             RequestHandler()
         return RequestHandler.__instance
 
@@ -76,19 +74,20 @@ class RequestHandler:
         RequestHandler._hostname, RequestHandler._port = RequestHandler.__load_settings()
 
         RequestHandler.__queue = Queue(-1)
-        RequestHandler.__sender_thread = threading.Thread(target=RequestHandler.__send, name="NETWORK", daemon=True)
+        RequestHandler.__sender_thread = threading.Thread(target=RequestHandler.__send,
+                                                          name="NETWORK", daemon=True)
         RequestHandler.__sender_thread.start()
 
-        if RequestHandler.__instance != None:
-            raise Exception("Attempting to instance a singleton class.")
-        else:
+        if RequestHandler.__instance is None:
             RequestHandler.__instance = self
+        else:
+            raise Exception("Attempting to instance a singleton class.")
 
-        
     @staticmethod
     def make_post_request(endpoint: Endpoint, data: dict, cb_success=None, cb_error=None):
 
-        request = Request(method=Method.POST, endpoint=endpoint.value, data=json.dumps(data), cb_success=cb_success, cb_error=cb_error)
+        request = Request(method=Method.POST, endpoint=endpoint.value, data=json.dumps(data),
+                          cb_success=cb_success, cb_error=cb_error)
         RequestHandler.__queue.put_nowait(request)
 
     @staticmethod
@@ -112,55 +111,52 @@ class RequestHandler:
 
             if request.method == Method.POST:
                 headers = {'Accept': 'text/plain', 'Content-Type': 'application/json'}
-                response = requests.post( url=f'https://{RequestHandler._hostname}:{RequestHandler._port}/api/{request.endpoint}',
+                response = requests.post( url=f'https://{RequestHandler._hostname}:\
+{RequestHandler._port}/api/{request.endpoint}',
                                         headers=headers,
                                         data=request.data,
                                         verify=RequestHandler._verify )
-            elif request.method == Method.GET:
-                raise NotImplementedError(f'Method {request.method} not implemented.')
-            elif request.method == Method.PUT:
-                raise NotImplementedError(f'Method {request.method} not implemented.')
-            elif request.method == Method.DELETE:
-                raise NotImplementedError(f'Method {request.method} not implemented.')
             else:
                 raise NotImplementedError(f'Unknown method: {request.method}.')
 
-                    
+
             if response.ok:
-                log.debug(f'Response ({response.status_code})\n{response.content}')
+                log.debug('Response (%i)\n%s', response.status_code, response.content)
                 RequestHandler.__successtive_fails = 0
-                if (request.cb_success) : request.cb_success(response.content)
+                if request.cb_success:
+                    request.cb_success(response.content)
             else:
-                log.debug(f'Response ({response.status_code})')
+                log.debug('Response (%i)', response.status_code)
                 RequestHandler.__queue.put_nowait(request)
 
-                if request.cb_error: request.cb_error(response.content)
-                
+                if request.cb_error:
+                    request.cb_error(response.content)
+
                 RequestHandler.__successtive_fails += 1
 
                 # If we've failed to send a message five times in a row, sleep for 10 seconds.
                 if RequestHandler.__successtive_fails >= 5:
-                    log.warning(f"Failed to send a request {RequestHandler.__successtive_fails} times in a row. Waiting for 10 seconds before retry.")
+                    log.warning("Failed to send a request %i times in a row. \
+Waiting for 10 seconds before retry.",
+                                RequestHandler.__successtive_fails)
                     RequestHandler.__delaying = True
 
                     retry_delay = threading.Timer(10, RequestHandler.__retry_send)
                     retry_delay.start()
 
-
-    
     @staticmethod
     def __load_settings():
-        with open('network.conf', 'r') as f:
-            settings = json.load(f)
+        with open('network.conf', 'r') as file:
+            settings = json.load(file)
 
         try:
             hostname = settings['hostname']
             port = settings['port']
         except:
             log.critical("Unable to load network settings from file.")
-            raise RuntimeError("Unable to load network settings from file.")
+            raise RuntimeError("Unable to load network settings from file.") from None
 
-        log.debug(f'Remote hostname: {hostname}, remote port: {port}.')
+        log.debug('Remote hostname: %s, remote port: %i.', hostname, port)
 
         return hostname, port
 
@@ -186,5 +182,3 @@ if __name__ == '__main__':
 
 
     input()
-
-

@@ -2,7 +2,6 @@
 
 import threading
 import subprocess
-from enum import Enum, auto
 from time import sleep, time
 import logging as log
 import os
@@ -12,7 +11,8 @@ from collections.abc import Callable
 import struct
 import math
 
-__all__ = ['Sniffer', 'BtbrProcessor', 'BtleProcessor', 'BtleAdvProcessor', 'BtbrFingerprint', 'mac_bytes_to_str']
+__all__ = ['Sniffer', 'BtbrProcessor', 'BtleProcessor', 'BtleAdvProcessor',
+           'BtbrFingerprint', 'mac_bytes_to_str']
 
 __author__ = "Severin Marti <severin.marti@ost.ch"
 __status__  = "development"
@@ -36,11 +36,11 @@ class Std:
             return
 
         new_mean = (self._n*self.mean + value) / (self._n+1)
-        new_std = math.sqrt((self._n*(self.std**2 + (new_mean-self.mean) ** 2) + (new_mean-value)**2) / (self._n+1))
+        new_std = math.sqrt((self._n*(self.std**2 + (new_mean-self.mean) ** 2) +
+                            (new_mean-value)**2) / (self._n+1))
         self.mean = new_mean
         self.std = new_std
         self._n += 1
-    
 
 class BtFingerprint:
     def __init__(self):
@@ -59,7 +59,7 @@ class BtbrFingerprint(BtFingerprint):
         if packet.flags & 0b1:
             self.uap = packet.uap
 
-        if new := self.lap == None:
+        if new := self.lap is None:
             self.lap = packet.lap
 
         self.last_seen = packet.timestamp
@@ -67,7 +67,8 @@ class BtbrFingerprint(BtFingerprint):
         return new
 
     def __str__(self):
-        return f'{(self.uap if self.uap else 0):02x}{self.lap:06x} first_seen: {self.first_seen} last_seen: {self.last_seen}'
+        return f'{(self.uap if self.uap else 0):02x}{self.lap:06x}' \
+               f'first_seen: {self.first_seen} last_seen: {self.last_seen}'
 
 class BtleFingerprint(BtFingerprint, Std):
     def __init__(self):
@@ -78,7 +79,7 @@ class BtleFingerprint(BtFingerprint, Std):
         self.rssi = None
 
     def update(self, packet):
-        if self.aa == None:
+        if self.aa is None:
             self.aa = packet.aa
 
         self.rssi = packet.rssi
@@ -91,7 +92,8 @@ class BtleFingerprint(BtFingerprint, Std):
         return self.times_seen
 
     def __str__(self):
-        return f'{self.aa:06x} seen {self.times_seen} times, last_seen {self.last_seen}, rssi: {self.rssi}, mean: {self.mean}, std: {self.std}'
+        return f'{self.aa:06x} seen {self.times_seen} times, last_seen {self.last_seen}, '\
+               f'rssi: {self.rssi}, mean: {self.mean}, std: {self.std}'
 
 class BtleAdvFingerprint(BtFingerprint, Std):
     def __init__(self):
@@ -103,7 +105,7 @@ class BtleAdvFingerprint(BtFingerprint, Std):
         self.rssi = None
 
     def update(self, packet):
-        if new := self.mac == None:
+        if new := self.mac is None:
             self.mac = packet.mac
 
         self.rssi = packet.rssi
@@ -116,7 +118,8 @@ class BtleAdvFingerprint(BtFingerprint, Std):
         return new
 
     def __str__(self):
-        return f'{mac_bytes_to_str(self.mac)} random: {self.random} first_seen: {self.first_seen} last_seen: {self.last_seen}, rssi: {self.rssi}, mean: {self.mean}, std: {self.std}'
+        return f'{mac_bytes_to_str(self.mac)} random: {self.random} first_seen: {self.first_seen} '\
+               f'last_seen: {self.last_seen}, rssi: {self.rssi}, mean: {self.mean}, std: {self.std}'
 
 class Processor:
 
@@ -141,15 +144,15 @@ class Processor:
 
         with suppress(OSError):
             os.remove(path)
-    
+
         os.mkfifo(path)
 
         return path
 
-    def start(self, callback=None):
+    def start(self):
         raise NotImplementedError('Method not implemented in base class.')
 
-    def process(self, callback=None):
+    def process(self):
         raise NotImplementedError('Method not implemented in base class.')
 
     def stop(self):
@@ -190,8 +193,8 @@ class BtleAdvProcessor(Processor):
                 except struct.error:
                     if not self._running:
                         break
-                    else:
-                        raise
+
+                    raise
 
                 with self._lock:
                     if self._fingerprints[data.mac].update(data):
@@ -215,7 +218,11 @@ class BtleAdvProcessor(Processor):
 
     def __str__(self):
         with self._lock:
-            return '=== BTLE ADVERTISEMENT ===\n'+'\n'.join(f'{":".join(hex(int(byte)).replace("0x", "") for byte in reversed(k))}: {v}' for k, v in self._fingerprints.items() if v.last_seen-v.first_seen > 5)+f'\n{len(self._fingerprints)} results.'
+            return '=== BTLE ADVERTISEMENT ===\n' + \
+                '\n'.join(f'{":".join(hex(int(byte)).replace("0x", "") for byte in reversed(k))}'+ \
+                    f': {v}'\
+                     for k, v in self._fingerprints.items() if v.last_seen-v.first_seen > 5)+ \
+                f'\n{len(self._fingerprints)} results.'
 
 class BtleProcessor(Processor):
     default_pipe = 'pipes/btle'
@@ -249,8 +256,8 @@ class BtleProcessor(Processor):
                 except struct.error:
                     if not self._running:
                         break
-                    else:
-                        raise
+
+                    raise
 
                 with self._lock:
                     if self._fingerprints[data.aa].update(data) >= self.seen_threshold:
@@ -272,7 +279,9 @@ class BtleProcessor(Processor):
 
     def __str__(self):
         with self._lock:
-            return '=== BTLE ===\n'+'\n'.join(f'{k:06x}: {v}' for k, v in self._fingerprints.items() if v.times_seen >= self.seen_threshold)+f'\n{len(self._fingerprints)} results.'
+            return '=== BTLE ===\n'+'\n'.join(f'{k:06x}: {v}' \
+                for k, v in self._fingerprints.items()\
+                if v.times_seen >= self.seen_threshold)+f'\n{len(self._fingerprints)} results.'
 
 class BtbrProcessor(Processor):
     default_pipe = 'pipes/btbr'
@@ -286,13 +295,13 @@ class BtbrProcessor(Processor):
         self.cmd = f'ubertooth-rx -m {self._pipe} -U {ut_id}'.split(' ')
         self._fingerprints = defaultdict(BtbrFingerprint)
         self._callback = callback
-        
+
     def start(self):
         self._running = True
         self._processing_thread = threading.Thread(target=BtbrProcessor.process,
                                                 args=[self],
                                                 name=f'{self.name}.processor')
-                                            
+
         self._processing_thread.start()
 
     def process(self):
@@ -328,7 +337,9 @@ class BtbrProcessor(Processor):
 
     def __str__(self):
         with self._lock:
-            return '=== BTBR ===\n'+'\n'.join(f'{k:06x}: {v}' for k, v in self._fingerprints.items())+f'\n{len(self._fingerprints)} results.'
+            return '=== BTBR ===\n' + \
+                '\n'.join(f'{k:06x}: {v}' for k, v in self._fingerprints.items()) + \
+                f'\n{len(self._fingerprints)} results.'
 
 class Sniffer:
 
@@ -336,9 +347,10 @@ class Sniffer:
         self._processor = processor
         self._running  = False
         self._sniff_thread = None
+        self._watcher_thread = None
 
     def start(self):
-        log.debug(f'Starting sniffer {self._processor.name}.')
+        log.debug('Starting sniffer %s.', self._processor.name)
         self._running = True
         self._watcher_thread = threading.Thread(target=Sniffer._watch_subprocess,
                                                args=[self],
@@ -348,7 +360,7 @@ class Sniffer:
         self._processor.start()
 
     def stop(self):
-        log.debug(f'Stopping sniffer {self._processor.name}.')
+        log.debug('Stopping sniffer %s.', self._processor.name)
 
         self._running = False
 
@@ -363,11 +375,12 @@ class Sniffer:
             if (exit_code := process.poll()) is not None:
                 # Should be running
                 if self._running:
-                    log.warning(f'Process exited unexpectedly with code {exit_code}. Restarting...')
+                    log.warning('Process exited unexpectedly with code %i. Restarting...',
+                                exit_code)
                     process = subprocess.Popen(args=self._processor.cmd)
                 # Should not be running
                 else:
-                    log.debug(f'Process exited with code {exit_code}')
+                    log.debug('Process exited with code %i', exit_code)
                     break
 
             else:
@@ -376,11 +389,11 @@ class Sniffer:
                     try:
                         process.terminate()
                         process.communicate(timeout=5)
-                        log.debug(f'Process exited with code {process.returncode}')
+                        log.debug('Process exited with code %i', process.returncode)
                     except subprocess.TimeoutExpired:
                         log.warning('Process did not stop normally, killing...')
                         process.kill()
-                        log.debug(f'Process exited with code {process.poll()}')
+                        log.debug('Process exited with code %i', process.poll())
 
                     break
 
