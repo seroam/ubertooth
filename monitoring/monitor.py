@@ -101,7 +101,7 @@ def create_sniffers(modes: list):
         elif mode == 'btle':
             sniffers.append(Sniffer(processor=BtleProcessor(callback=report_btle_result, ut_id=i)))
         elif mode == 'btle-adv':
-            sniffers.append(Sniffer(processor=BtleAdvProcessor(callback=report_btle_adv_result,
+            sniffers.append(Sniffer(processor=BtleAdvProcessor(callback=report_btle_adv_result, seen_for=60,
                                                                ut_id=i)))
         else:
             log.error('Unrecognized operating mode: %s.', mode)
@@ -112,7 +112,7 @@ def create_sniffers(modes: list):
 def report_results(sniffers: list):
     while True:
 
-        sleep(5)
+        sleep(15)
 
         log.debug("Reporting results.")
         for sniffer in sniffers:
@@ -144,16 +144,16 @@ def report_location(interval: int):
         sleep(interval)
 
 def get_location():
-    long = 85500000
-    lat = 473666700
+    long = 87500000#85500000
+    lat = 474666700#473666700
 
     while True:
         yield [long/10000000, lat/10000000]
         long, lat = long+20000, lat+20000
 
-
 def get_antenna_id():
-    data = {'address': getmac.get_mac_address()}
+    data = {'address': 'ff:ff:ff:ff:ff:ff'}
+    print(data)
     RequestHandler.make_post_request(Endpoint.ID, data, cb_success=set_antenna_id)
 
 def set_antenna_id(response: bytes):
@@ -196,7 +196,7 @@ if __name__ == '__main__':
         sniffer.start()
 
     location_reporter = threading.Thread(target=report_location,
-                                        args=[1],
+                                        args=[2],
                                         name='loc_reporter',
                                         daemon=True)
     location_reporter.start()

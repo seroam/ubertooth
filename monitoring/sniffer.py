@@ -170,10 +170,11 @@ class BtleAdvProcessor(Processor):
     _Packet = namedtuple('Packet', ['type', 'random', 'mac', 'timestamp', 'rssi'])
 
 
-    def __init__(self, *, pipe_path='', callback=None, ut_id=0):
+    def __init__(self, *, pipe_path='', callback=None, ut_id=0, seen_for=30):
         Processor.__init__(self, pipe_path=pipe_path, callback=callback, ut_id=ut_id)
         self.cmd = f'ubertooth-btle -M {self._pipe} -U {ut_id}'.split(' ')
         self._fingerprints = defaultdict(BtleAdvFingerprint)
+        self.seen_for = seen_for
 
     def start(self):
         self._running = True
@@ -214,14 +215,14 @@ class BtleAdvProcessor(Processor):
 
             return [ value
                     for value in self._fingerprints.values()
-                    if value.last_seen-value.first_seen > 5]
+                    if value.last_seen-value.first_seen > self.seen_for]
 
     def __str__(self):
         with self._lock:
             return '=== BTLE ADVERTISEMENT ===\n' + \
                 '\n'.join(f'{":".join(hex(int(byte)).replace("0x", "") for byte in reversed(k))}'+ \
                     f': {v}'\
-                     for k, v in self._fingerprints.items() if v.last_seen-v.first_seen > 5)+ \
+                     for k, v in self._fingerprints.items() if v.last_seen-v.first_seen > self.seen_for)+ \
                 f'\n{len(self._fingerprints)} results.'
 
 class BtleProcessor(Processor):
