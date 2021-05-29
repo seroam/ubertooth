@@ -103,15 +103,19 @@ class BtleAdvFingerprint(BtFingerprint, Std):
         self.random = None
         self.mac = None
         self.rssi = None
+        self.service_uuid = None
+        self.company_id = None
 
     def update(self, packet):
         if new := self.mac is None:
             self.mac = packet.mac
+            self.service_uuid = packet.service_uuid
+            self.company_id = packet.company_id
+            self.random = packet.random
+
 
         self.rssi = packet.rssi
         self.update_std(packet.rssi)
-
-        self.random = packet.random
 
         self.last_seen = packet.timestamp
 
@@ -119,7 +123,8 @@ class BtleAdvFingerprint(BtFingerprint, Std):
 
     def __str__(self):
         return f'{mac_bytes_to_str(self.mac)} random: {self.random} first_seen: {self.first_seen} '\
-               f'last_seen: {self.last_seen}, rssi: {self.rssi}, mean: {self.mean}, std: {self.std}'
+               f'last_seen: {self.last_seen} rssi: {self.rssi} mean: {self.mean} std: {self.std} '\
+               f'service_uuid: {hex(self.service_uuid)} company_id: {hex(self.company_id)}'
 
 class Processor:
 
@@ -165,9 +170,9 @@ class Processor:
 class BtleAdvProcessor(Processor):
     default_pipe = 'pipes/btle-adv'
     name = 'btle-adv'
-    _packet_length = 16
-    _fmt = 'B?6sIi'
-    _Packet = namedtuple('Packet', ['type', 'random', 'mac', 'timestamp', 'rssi'])
+    _packet_length = 20
+    _fmt = 'B?6sIiHH'
+    _Packet = namedtuple('Packet', ['type', 'random', 'mac', 'timestamp', 'rssi', 'service_uuid', 'company_id'])
 
 
     def __init__(self, *, pipe_path='', callback=None, ut_id=0, seen_for=30):

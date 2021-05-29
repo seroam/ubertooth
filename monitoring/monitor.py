@@ -69,9 +69,10 @@ def report_btle_result(fingerprint: BtleFingerprint):
     log.debug('Received fingerprint %s', fingerprint)
 
 def report_btle_adv_result(fingerprint: BtleAdvFingerprint):
-    keys = ['macAddress', 'rssi', 'std', 'mean', 'firstSeen', 'lastSeen', 'antennaId']
+    keys = ['macAddress', 'rssi', 'std', 'mean', 'firstSeen', 'lastSeen', 'serviceUUID', 'companyId', 'random', 'antennaId']
     vals = [mac_bytes_to_str(fingerprint.mac), fingerprint.rssi, fingerprint.std, fingerprint.mean,
-            fingerprint.first_seen, fingerprint.last_seen, ANTENNA]
+            fingerprint.first_seen, fingerprint.last_seen, fingerprint.service_uuid,
+            fingerprint.company_id, 1 if fingerprint.random else 0, ANTENNA]
 
     data = dict(zip(keys, vals))
     RequestHandler.make_post_request(Endpoint.MAC, data)
