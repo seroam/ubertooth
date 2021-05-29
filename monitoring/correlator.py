@@ -10,25 +10,6 @@ from collections import namedtuple
 from math import asin, sqrt, sin, cos, radians
 Coords = namedtuple("Coords", "lat lng")
 
-class Fingerprint:
-    def __init__(self, row: tuple):
-        self.mac = row[1]
-        self.rssi = row[2]
-        self.rssi_mean = row[4]
-        self.first_seen = row[5]
-        self.last_seen = row[6]
-        self.antenna = row[7]
-
-        self.correlated = 0
-        self.successors = list()
-
-    def is_same(self, other):
-        if self.mac == other.mac:
-            return True
-
-    def get_path(self):
-        pass
-
 
 class BtleAdvFingerprint:
 
@@ -139,7 +120,7 @@ def process_btle_adv(*, delta_max: int=5, max_candidates: int=2):
 
         if first_candidate_index < length:
             for candidate in fingerprints[first_candidate_index:]:
-                if candidate.first_seen - fingerprint.last_seen < 5 and \
+                if candidate.first_seen - fingerprint.last_seen < delta_max and \
                    fingerprint.is_possible_successor(candidate):
                         candidates.append(candidate)
                 else:
