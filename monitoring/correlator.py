@@ -107,6 +107,9 @@ class BtleAdvFingerprint:
     def __str__(self) -> str:
         return ', '.join(f'{k}={v}' for k, v in self.__dict__.items())
 
+    def __repr__(self) -> str:
+        return f'{self.mac[:2]}..{self.mac[-2:]} {self.first_seen}-{self.last_seen} on {self.antenna}'
+
     def __hash__(self) -> int:
         return ''.join(f'{v}' for v in self.__dict__.values()).__hash__()
 
@@ -218,52 +221,67 @@ def is_same(old: BtleAdvFingerprint, new: BtleAdvFingerprint, *, max_distance: i
     else:
         return False
 
-def check_hop(fingerprint: BtleAdvFingerprint, macs: dict, fingerprints: list):
-    for antenna in macs.keys():
-        if antenna == fingerprint.antenna:
-            continue
-
-        if fingerprint.mac in macs[antenna]:
-            for occurrence in macs[antenna][fingerprint.mac]:
-                if is_same(fingerprint, other := fingerprints[occurrence]):
-                    print(f'le hop:\n\tleft:\n\t\t{fingerprint}\n\tright:\n\t\t{other}')
-                    fingerprint.add_hopped(other)
-
-def print_mac(old, new, mac='51:83:68:fd:f5:ef'):
-    if old.mac == mac:
-        output = f'time: {old.first_seen <= new.first_seen <= (old.last_seen + 15*60)} uuid: {old.service_uuid == new.service_uuid} cid: { old.company_id == new.company_id}'
-
-        if old.last_seen > new.first_seen:
-            output += f'dist1: { antenna_distance(old.antenna, new.first_seen, new.antenna) <= 0.1}'
-        else:
-            output += f'dist2: {antenna_distance(old.antenna, old.last_seen, new.antenna, new.first_seen) <= 15}'
-    
-        print(output)
-
-# This definitely needs a test
-def resolve_hops(fingerprints: list):
-    if fingerprints[0].mac == '51:83:68:fd:f5:ef':
-        print('\n'.join(str(fp) for fp in fingerprints))
+def get_components(fingerprints: list) -> tuple:
+    #if fingerprints[0].mac == '51:83:68:fd:f5:ef' or True:
+    #    print(f'gc_fp=\n'+'\n'.join(str(fp) for fp in fingerprints)+'\n')
 
     combinations = itertools.combinations(fingerprints, 2)
 
     graph = nx.Graph()
-    #graph.add_node((index, fp) for index, fp in enumerate(fingerprints))
 
     graph.add_nodes_from(fingerprints)
+
     for combination in combinations:
         if is_same(*combination):
             graph.add_edge(*combination)
 
-    plt.clf()
-    if fingerprints[0].mac == '51:83:68:fd:f5:ef':
-        nx.draw(graph, with_labels=True)
-        #plt.show()
+    components = [list(comp) for comp in nx.connected_components(graph)]
+    
+    return graph, components
 
-    connected = [comp for comp in nx.connected_components(graph)]
-    print(type(connected))
-    return connected
+def find_end(fingerprints: list, *, end: str) -> BtleAdvFingerprint:
+    if end == 'head':
+        extreme = min
+        attr = 'first_seen'
+    elif end == 'tail':
+        extreme = max
+        attr = 'last_seen'
+    else:
+        raise ValueError("Unknown end: {end}.")
 
+    times = [getattr(fp, attr) for fp in fingerprints]
+    extreme_value = extreme(times)
+
+    # If only one was seen until the end, return it
+    if times.count(extreme_value) == 1:
+        return fingerprints[times.index(extreme_value)]
+    else: # Else return the one that was longest seen or first in the list if multiple were seen for the same duration
+        duration_seen = [fp.last_seen - fp.first_seen if getattr(fp, attr) == extreme_value else 0 for fp in fingerprints]
+        return fingerprints[duration_seen.index(max(duration_seen))]
+
+def get_paths(fingerprints: list) -> tuple:
+    graph, components = get_components(fingerprints)
+
+    paths = list()
+    unused = list()
+
+    for component in components:
+        if len(component) == 1:
+            continue
+        last_node = find_end(component, end='tail')
+        first_node = find_end(component, end='head')
+        path = nx.shortest_path(graph, first_node, last_node)
+        rest = set(component).difference(set(path))
+
+        paths.append(path)
+        unused.append(rest)
+
+    return paths, unused
+
+def resolve_hops(fingerprints: list):
+    paths, unused = get_paths(fingerprints)
+
+    
 
 def process_btle_adv(*, delta_max: int=5, max_candidates: int=2):
 
@@ -275,7 +293,6 @@ def process_btle_adv(*, delta_max: int=5, max_candidates: int=2):
 
     for index, fingerprint in enumerate(fingerprints):
 
-        #check_hop(fingerprint, macs, fingerprints)
         record[fingerprint.mac].append(fingerprint)
 
         if not fingerprint.is_random:
@@ -327,7 +344,5 @@ if __name__ == '__main__':
     DbReader(db_file)
 
     process_btle_adv()
-
-    print(haversine((50, 11), (50, 11.2099)))
     
 
