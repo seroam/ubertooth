@@ -6,66 +6,126 @@ from sqlite3.dbapi2 import Timestamp
 import sys
 from os.path import isfile
 import bisect
-from collections import namedtuple
+from collections import namedtuple, defaultdict
 from math import asin, sqrt, sin, cos, radians
-Coords = namedtuple("Coords", "lat lng")
+from typing import Generator
+import networkx as nx
+import itertools
+import matplotlib.pyplot as plt
+import random
 
+
+def haversine(a: tuple, b: tuple):
+    '''Haversine equations to calculate distance on sphere'''
+    earth_radius = 6371.0088
+
+    lat1, lng1 = a
+    lat2, lng2 = b
+
+    lat1, lng1, lat2, lng2 = radians(lat1), radians(lng1), radians(lat2), radians(lng2)
+
+    d = sin((lat2 - lat1) * 0.5) ** 2 + cos(lat1) * cos(lat2) * sin((lng2 - lng1) * 0.5) ** 2
+
+    return 2 * earth_radius * asin(sqrt(d))
+
+def antenna_distance(id1: int, t1: int, id2: int, t2: int=None):
+    if t2 is None:
+        t2 = t1
+
+    return haversine(DbReader.get_antenna_location(antenna=id1, timestamp=t1),
+                     DbReader.get_antenna_location(antenna=id2, timestamp=t2))
 
 class BtleAdvFingerprint:
 
-    def __init__(self, mac, rssi, std, mean, first_seen, last_seen, antenna):
+    def __init__(self, mac, rssi, std, mean, first_seen, last_seen, service_uuid, company_id, is_random, antenna):
         self.mac = mac
         self.rssi = rssi
         self.std = std
         self.mean = mean
         self.first_seen = first_seen
         self.last_seen = last_seen
+        self.service_uuid = service_uuid
+        self.company_id = company_id
+        self.is_random = is_random
         self.antenna = antenna
-        self.successors = list()
+
         self.is_successor = False
-        self.is_static = False
-        self.type = 0
+        self.successors = list()
+        self.is_hopped = False
+        self.antenna_hop = list()
 
     def get_chain(self, *, indent: int=0) -> str:
         return f'{" "*indent}{self.mac}\n'+ \
             '\n'.join(successor.get_chain(indent=indent+2) for successor in self.successors)
 
-    def add_candidates(self, candidates: list, max_candidates: int=2) -> None:
+    def add_candidates(self, candidates: list, *, max_candidates: int=2, candidates_limit: int=5) -> None:
         '''Filters, sorts and adds a list of candidates to the successors list\n
+
+        Positional arguments:
+        candidates -- a list of BtleAdvFingerprints of successor candidates
+
+        Keyword arguments:
+        max_candidates -- the maximum number of candidates that will be added to the successors list
+        candidates_limit -- the maximum number of candidates for which picking successors is still assumed reasonable.
+
         If candidates contains only one candidate, adds the list directly.\n
         If candidates contains at most max_candidates candidates, sorts them by rssi difference and adds them to the list.\n
-        If candidates contains more than max_candidates candidates, appends the max_candidates candidates with the smallest rssi difference.\n
+        If candidates contains more than max_candidates candidates, but less than candidates_limit, appends the max_candidates candidates with the smallest rssi difference.\n
         is_successor is only set on a Fingerprint if it is the only candidate.
+        is candidates contains more than candidates_limit candidates, does nothing
+
+        Reasoning:
+        If there is more than one candidate, we cannot be sure we picked the new successor, therefore we do not mark the candidate as a successor.
+        If there is more than candidates_limit candidates, picking one would be extremely unrealiable and picking one would yield little
+        
         '''
         if (num_candidates := len(candidates)) == 0:
             pass
         elif num_candidates == 1:
             self.successors = candidates
             candidates[0].is_successor = True
-        else:
+        elif num_candidates <= candidates_limit:
             candidates.sort(key=lambda x: max(abs(self.rssi-x.mean)-x.std, 0))
             self.successors = candidates[:max_candidates]
 
-    def is_possible_successor(self, candidate) -> bool:
-        #TODO: Compare type
-        #TODO: Compare location
-        return True
+    def is_possible_successor(self, candidate, *, max_distance_diff: int=10) -> bool:
+        '''Performs basic test if a candidate could be a successor by comparing company_id and service_uuid, as well as the location
+        
+        Positional arguments:\n
+        candiate -- the candidate BtleAdvFingerprint\n
+        
+        Keyword arguments:\n
+        max_distance_diff -- the maximum allowed distance in km between the antennas at points self.last_seen and candidate.first_seen'''
+
+        return self.company_id == candidate.company_id and \
+               self.service_uuid == candidate.service_uuid and \
+               antenna_distance(self.antenna, self.last_seen, candidate.antenna, candidate.first_seen) <= max_distance_diff
+
+    def add_hopped(self, other) -> None:
+        raise NotImplementedError("add_hopped not yet implemented.")
 
     def __str__(self) -> str:
         return ', '.join(f'{k}={v}' for k, v in self.__dict__.items())
 
+    def __hash__(self) -> int:
+        return ''.join(f'{v}' for v in self.__dict__.values()).__hash__()
+
     def __lt__(self, other) -> bool:
+        '''Performs a comparison of first_seen with last_seen.
+
+        Implementation is necessary for use in bisect algorithm, as it does not take a key parameter'''
+
         return self.first_seen < other.last_seen
 
     def __gt__(self, other) -> bool:
+        '''Performs a comparison of first_seen with last_seen.
+
+        Implementation is necessary for use in bisect algorithm, as it does not take a key parameter'''
         return self.first_seen > other.last_seen
 
     def __eq__(self, other) -> bool:
         return not (self < other or self > other)
 
-
-
-        
 class DbReader:
 
     __instance = None
@@ -90,28 +150,135 @@ class DbReader:
         DbReader.__db_file = db_file
 
     @staticmethod
-    def get_antenna_path(*, start: int=0, end: int=sys.maxsize):
-        statement = f"SELECT Longitude, Latitude, Timestamp FROM Metadata WHERE Timestamp BETWEEN {start} and {end}"
+    def get_antenna_path(*, antenna: int, start: int=0, end: int=sys.maxsize) -> list:
+        statement = f"SELECT Longitude, Latitude, Timestamp FROM Metadata WHERE AntennaId == {antenna} AND Timestamp BETWEEN {start} AND {end}"
+        return DbReader._execute(statement)
 
-        print(statement)
+    @staticmethod
+    def get_antenna_location(*, antenna: int, timestamp: int) -> tuple:
+        statement = f'SELECT Latitude, Longitude FROM Metadata WHERE AntennaId == {antenna} AND Timestamp <= {timestamp} ORDER BY Timestamp DESC LIMIT 1'
+        location = DbReader._execute(statement)
+
+        if not location:
+            raise LookupError(f'No location for antenna {antenna} found before {timestamp}')
+        return location[0]
 
     @staticmethod
     def get_mac_rows(*, start: int = 0, end: int = sys.maxsize):
+        statement = 'SELECT * FROM MacAddresses ORDER BY FirstSeen'
+        rows = DbReader._execute_lazy(statement)
+
+        return [BtleAdvFingerprint(*row[1:]) for row in rows]
+
+    @staticmethod
+    def get_all_macs():
+        data = dict()
+        
+        for antenna in DbReader._execute_lazy('SELECT DISTINCT AntennaId FROM MacAddresses'):
+            macs = defaultdict(list)
+            for mac in DbReader._execute_lazy(f'SELECT DISTINCT MacAddress, Id FROM MacAddresses WHERE AntennaId == {antenna[0]}'):
+                macs[mac[0]].append(mac[1])
+            
+            data[antenna[0]] = dict(macs)
+
+        return data
+
+    @staticmethod
+    def _execute(statement: str) -> list:
         with sqlite3.connect(DbReader._db_file) as conn:
             cur = conn.cursor()
-            rows = cur.execute("SELECT * FROM MacAddresses ORDER BY FirstSeen")
+            rows = cur.execute(statement)
 
-            return [BtleAdvFingerprint(*row[1:]) for row in rows]
+            return [row for row in rows]
 
+    @staticmethod
+    def _execute_lazy(statement: str) -> Generator:
+        with sqlite3.connect(DbReader._db_file) as conn:
+            cur = conn.cursor()
+            for row in cur.execute(statement):
+                yield row
+
+def is_same(old: BtleAdvFingerprint, new: BtleAdvFingerprint, *, max_distance: int=15):
+    ''' Checks for two BtleAdvFingerprints old, new if new could be the same as old by\n
+     - checking if new appeared in the time span (old.first_seen, old.lastseen+15m)\n
+     - checking if service_uuid and company_id match\n
+     - the distance between the antennas at the time of new.first_seen is at most max_distance km if there was a gap between the observations\n
+     - the distance between the antennas at the times old.last_seen and new.first_seen was at most 100m if there was no gap between the observations
+    '''
+
+    if old.first_seen <= new.first_seen <= (old.last_seen + 15*60) and \
+       old.service_uuid == new.service_uuid and \
+       old.company_id == new.company_id:
+
+        if old.last_seen > new.first_seen: # If there's no gap in the observation, allow max 100m difference
+            return antenna_distance(old.antenna, new.first_seen, new.antenna) <= 0.1
+        else: # If there's a gap in the observation, allow max_mistance difference
+            return antenna_distance(old.antenna, old.last_seen, new.antenna, new.first_seen) <= max_distance
+
+    else:
+        return False
+
+def check_hop(fingerprint: BtleAdvFingerprint, macs: dict, fingerprints: list):
+    for antenna in macs.keys():
+        if antenna == fingerprint.antenna:
+            continue
+
+        if fingerprint.mac in macs[antenna]:
+            for occurrence in macs[antenna][fingerprint.mac]:
+                if is_same(fingerprint, other := fingerprints[occurrence]):
+                    print(f'le hop:\n\tleft:\n\t\t{fingerprint}\n\tright:\n\t\t{other}')
+                    fingerprint.add_hopped(other)
+
+def print_mac(old, new, mac='51:83:68:fd:f5:ef'):
+    if old.mac == mac:
+        output = f'time: {old.first_seen <= new.first_seen <= (old.last_seen + 15*60)} uuid: {old.service_uuid == new.service_uuid} cid: { old.company_id == new.company_id}'
+
+        if old.last_seen > new.first_seen:
+            output += f'dist1: { antenna_distance(old.antenna, new.first_seen, new.antenna) <= 0.1}'
+        else:
+            output += f'dist2: {antenna_distance(old.antenna, old.last_seen, new.antenna, new.first_seen) <= 15}'
+    
+        print(output)
+
+# This definitely needs a test
+def resolve_hops(fingerprints: list):
+    if fingerprints[0].mac == '51:83:68:fd:f5:ef':
+        print('\n'.join(str(fp) for fp in fingerprints))
+
+    combinations = itertools.combinations(fingerprints, 2)
+
+    graph = nx.Graph()
+    #graph.add_node((index, fp) for index, fp in enumerate(fingerprints))
+
+    graph.add_nodes_from(fingerprints)
+    for combination in combinations:
+        if is_same(*combination):
+            graph.add_edge(*combination)
+
+    plt.clf()
+    if fingerprints[0].mac == '51:83:68:fd:f5:ef':
+        nx.draw(graph, with_labels=True)
+        #plt.show()
+
+    connected = [comp for comp in nx.connected_components(graph)]
+    print(type(connected))
+    return connected
 
 
 def process_btle_adv(*, delta_max: int=5, max_candidates: int=2):
+
+    record = defaultdict(list)
+
     fingerprints = DbReader.get_mac_rows()
 
     length = len(fingerprints)
 
     for index, fingerprint in enumerate(fingerprints):
-        if fingerprint.is_static:
+
+        #check_hop(fingerprint, macs, fingerprints)
+        record[fingerprint.mac].append(fingerprint)
+
+        if not fingerprint.is_random:
             continue
 
         first_candidate_index = bisect.bisect_left(fingerprints, fingerprint, index)
@@ -127,23 +294,15 @@ def process_btle_adv(*, delta_max: int=5, max_candidates: int=2):
                     break
 
         fingerprint.add_candidates(candidates)
+
+    # Determine hops
+    for occurrences in record.values():
+        if len(occurrences) > 1:
+            resolve_hops(occurrences)
             
     for fingerprint in fingerprints:
         if not fingerprint.is_successor:
-            print(fingerprint.get_chain())
-
-def haversine(a: tuple, b: tuple):
-    '''Haversine equations to calculate distance on sphere'''
-    earth_radius = 6371.0088
-
-    lat1, lng1 = a
-    lat2, lng2 = b
-
-    lat1, lng1, lat2, lng2 = radians(lat1), radians(lng1), radians(lat2), radians(lng2)
-
-    d = sin((lat2 - lat1) * 0.5) ** 2 + cos(lat1) * cos(lat2) * sin((lng2 - lng1) * 0.5) ** 2
-
-    return 2 * earth_radius * asin(sqrt(d))
+            pass#print(fingerprint.get_chain())
 
 def usage():
     print(f"Usage: {sys.argv[0]} path_to_db_file")
@@ -168,5 +327,7 @@ if __name__ == '__main__':
     DbReader(db_file)
 
     process_btle_adv()
+
+    print(haversine((50, 11), (50, 11.2099)))
     
 
