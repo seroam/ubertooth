@@ -1,23 +1,20 @@
 #!/usr/bin/env python3
 
-from genericpath import isfile
 import sqlite3
-from sqlite3.dbapi2 import Timestamp
 import sys
 from os.path import isfile
 import bisect
-from collections import namedtuple, defaultdict
-from math import asin, sqrt, sin, cos, radians, ceil
+from collections import defaultdict
+from math import asin, sqrt, sin, cos, radians
 from typing import Generator
-import networkx as nx
 import itertools
-import matplotlib.pyplot as plt
 import argparse
-import polyline
-import requests
-import matplotlib.image as mpimg
-import PIL
 import urllib
+import polyline
+import PIL
+import requests
+import matplotlib.pyplot as plt
+import networkx as nx
 
 def haversine(a: tuple, b: tuple) -> float:
     '''Haversine equations to calculate distance on sphere'''
@@ -41,7 +38,8 @@ def antenna_distance(id1: int, t1: int, id2: int, t2: int=None) -> float:
 
 class BtleAdvFingerprint:
 
-    def __init__(self, mac, rssi, std, mean, first_seen, last_seen, service_uuid, company_id, is_random, antenna):
+    def __init__(self, mac, rssi, std, mean, first_seen, last_seen,
+                 service_uuid, company_id, is_random, antenna):
         self.mac = mac
         self.rssi = rssi
         self.std = std
@@ -63,7 +61,8 @@ class BtleAdvFingerprint:
             (f'*{self.antenna_hop.get_chain(indent=indent)}' if self.antenna_hop else \
                 '\n'.join(successor.get_chain(indent=indent+2) for successor in self.successors))
 
-    def add_candidates(self, candidates: list, *, max_candidates: int=2, candidates_limit: int=5) -> None:
+    def add_candidates(self, candidates: list, *, max_candidates: int=2,
+                       candidates_limit: int=5) -> None:
         '''Filters, sorts and adds a list of candidates to the successors list\n
 
         Positional arguments:
@@ -82,7 +81,7 @@ class BtleAdvFingerprint:
         Reasoning:
         If there is more than one candidate, we cannot be sure we picked the new successor, therefore we do not mark the candidate as a successor.
         If there is more than candidates_limit candidates, picking one would be extremely unrealiable and picking one would yield little
-        
+
         '''
         if (num_candidates := len(candidates)) == 0:
             pass
@@ -95,10 +94,10 @@ class BtleAdvFingerprint:
 
     def is_possible_successor(self, candidate, *, max_distance_diff: int=10) -> bool:
         '''Performs basic test if a candidate could be a successor by comparing company_id and service_uuid, as well as the location
-        
+
         Positional arguments:\n
         candiate -- the candidate BtleAdvFingerprint\n
-        
+
         Keyword arguments:\n
         max_distance_diff -- the maximum allowed distance in km between the antennas at points self.last_seen and candidate.first_seen'''
 
@@ -106,11 +105,15 @@ class BtleAdvFingerprint:
                self.service_uuid == candidate.service_uuid and \
                antenna_distance(self.antenna, self.last_seen, candidate.antenna, candidate.first_seen) <= max_distance_diff
 
-    def get_path(self, path: list=list(), earliest: int=None) -> list:
+    def get_path(self, path: list=None, earliest: int=None) -> list:
+
+        if not path:
+            path = list()
+
         start = earliest if earliest and earliest > self.first_seen else self.first_seen
 
         path += DbReader.get_antenna_path(antenna=self.antenna, start=start, end=self.last_seen)
-        
+
         if self.antenna_hop:
             self.antenna_hop.get_path(path, self.last_seen)
         elif self.successors:
@@ -121,7 +124,7 @@ class BtleAdvFingerprint:
     def has_mac(self, mac: str) -> bool:
         return self.mac == mac or \
             (self.antenna_hop.has_mac(mac) if self.antenna_hop else False) or \
-            (True in [fp.has_mac(mac) for fp in self.successors])
+            (any(fp.has_mac(mac) for fp in self.successors))
 
     def __str__(self) -> str:
         return ', '.join(f'{k}={v}' for k, v in self.__dict__.items())
@@ -159,17 +162,17 @@ class DbReader:
             raise SyntaxError('No database file set. Please call the constructor or set_db_file with a database file')
 
         return DbReader.__instance
-        
-    def __init__(self, db_file: str = None):
+
+    def __init__(self, file: str = None):
         if DbReader.__instance is None:
             DbReader.__instance = self
-            DbReader._db_file = db_file
+            DbReader._db_file = file
         else:
             raise Exception("Attempting to instance a singleton class.")
 
     @staticmethod
-    def set_db_file(db_file: str) -> None:
-        DbReader.__db_file = db_file
+    def set_db_file(file: str) -> None:
+        DbReader._db_file = file
 
     @staticmethod
     def get_antenna_path(*, antenna: int, start: int=0, end: int=sys.maxsize) -> list:
@@ -186,7 +189,7 @@ class DbReader:
         return location[0]
 
     @staticmethod
-    def get_mac_rows(*, start: int = 0, end: int = sys.maxsize) -> list:
+    def get_mac_rows() -> list:
         statement = 'SELECT * FROM MacAddresses ORDER BY FirstSeen'
         rows = DbReader._execute_lazy(statement)
 
@@ -195,12 +198,12 @@ class DbReader:
     @staticmethod
     def get_all_macs() -> list:
         data = dict()
-        
+
         for antenna in DbReader._execute_lazy('SELECT DISTINCT AntennaId FROM MacAddresses'):
             macs = defaultdict(list)
             for mac in DbReader._execute_lazy(f'SELECT DISTINCT MacAddress, Id FROM MacAddresses WHERE AntennaId == {antenna[0]}'):
                 macs[mac[0]].append(mac[1])
-            
+
             data[antenna[0]] = dict(macs)
 
         return data
@@ -237,12 +240,9 @@ def is_same(old: BtleAdvFingerprint, new: BtleAdvFingerprint, *, max_distance: i
         else: # If there's a gap in the observation, allow max_mistance difference
             return antenna_distance(old.antenna, old.last_seen, new.antenna, new.first_seen) <= max_distance
 
-    else:
-        return False
+    return False
 
 def get_components(fingerprints: list) -> tuple:
-    #if fingerprints[0].mac == '51:83:68:fd:f5:ef' or True:
-    #    print(f'gc_fp=\n'+'\n'.join(str(fp) for fp in fingerprints)+'\n')
 
     combinations = itertools.combinations(fingerprints, 2)
 
@@ -255,7 +255,7 @@ def get_components(fingerprints: list) -> tuple:
             graph.add_edge(*combination)
 
     components = [list(comp) for comp in nx.connected_components(graph)]
-    
+
     return graph, components
 
 def find_end(fingerprints: list, *, end: str) -> BtleAdvFingerprint:
@@ -289,7 +289,7 @@ def get_paths(fingerprints: list) -> tuple:
             continue
         last_node = find_end(component, end='tail')
         first_node = find_end(component, end='head')
-        path = nx.shortest_path(graph, first_node, last_node)
+        path = nx.shortest_path(graph, first_node,  last_node)
         rest = set(component).difference(set(path))
 
         paths.append(path)
@@ -307,22 +307,23 @@ def resolve_hops(fingerprints: list) -> None:
                 fingerprint.is_hopped = True
             if index < len_path-1:
                 fingerprint.antenna_hop = path[index+1]
-        
+
     for rest in unused:
         for fingerprint in rest:
             fingerprint.is_hopped = True
-    
+
 def get_google_image(path: list, mac: str=None) -> None:
     url_start = f'http://maps.googleapis.com/maps/api/staticmap?&size=1200x1200&markers=color:green|{path[0][0]},{path[0][1]}&markers=color:red|{path[-1][0]},{path[-1][1]}&path=color:0xff0000|weight:2|'
     api_key = 'AIzaSyBpMqQzkJbJF7kga0B2ucvY2J8NOOvWhqc'
 
     encoded = polyline.encode(path)
-    
+
     url = f'{url_start}enc:{encoded}&key={api_key}\n'
 
+    plt.axis('off')
+    plt.title(f'Path{" of "+mac if mac else ""}')
+
     try:
-        plt.axis('off')
-        plt.title(f'Path{" of "+mac if mac else ""}')
         img = PIL.Image.open(urllib.request.urlopen(url))
         plt.imshow(img)
         plt.show()
@@ -330,9 +331,7 @@ def get_google_image(path: list, mac: str=None) -> None:
         print("Unable to download the image. Please open it manually:")
         print(url)
 
-
-
-def process_btle_adv(*, delta_max: int=5, max_candidates: int=2):
+def process_btle_adv(*, delta_max: int=5):
 
     record = defaultdict(list)
 
@@ -354,8 +353,8 @@ def process_btle_adv(*, delta_max: int=5, max_candidates: int=2):
         if first_candidate_index < length:
             for candidate in fingerprints[first_candidate_index:]:
                 if candidate.first_seen - fingerprint.last_seen < delta_max and \
-                   fingerprint.is_possible_successor(candidate):
-                        candidates.append(candidate)
+                    fingerprint.is_possible_successor(candidate):
+                    candidates.append(candidate)
                 else:
                     break
 
@@ -366,10 +365,6 @@ def process_btle_adv(*, delta_max: int=5, max_candidates: int=2):
             resolve_hops(occurrences)
 
     return [fp for fp in fingerprints if not fp.is_successor and not fp.is_hopped]
-
-def usage():
-    print(f"Usage: {sys.argv[0]} path_to_db_file")
-    sys.exit(0)
 
 if __name__ == '__main__':
 
@@ -385,7 +380,7 @@ if __name__ == '__main__':
                         help='Mac addresses for which to display information.\n If none of -c, -p, -i are specified, print correlation.')
 
     parser.add_argument('-c', '--correlation', action='count',
-                        help='Print correlation of device. Specify device with -m.')   
+                        help='Print correlation of device. Specify device with -m.')
 
     parser.add_argument('-p', '--path', action='count',
                         help='Print path of device. Specify device with -m.')
@@ -396,7 +391,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if (args.correlation or args.path or args.image) and not args.mac:
-        print(f'Options -c, -p, -i must be used with -m.')
+        print('Options -c, -p, -i must be used with -m.')
         parser.print_help()
         sys.exit(0)
 
@@ -415,26 +410,26 @@ if __name__ == '__main__':
         for fp in btle:
             print(fp.get_chain())
     elif args.mac:
-        
+
         if args.correlation:
             for fp in btle:
-                if True in [fp.has_mac(mac) for mac in args.mac]:
+                if any(fp.has_mac(mac) for mac in args.mac):
                     print('===== CORRELATION=====')
                     print(fp.get_chain())
 
         if args.path:
             for fp in btle:
-                if True in [fp.has_mac(mac) for mac in args.mac]:
+                if any(fp.has_mac(mac) for mac in args.mac):
                     print('===== PATH =====')
                     print(fp.get_path())
         if args.image:
             for fp in btle:
-                if True in [fp.has_mac(mac) for mac in args.mac]:
+                if any(fp.has_mac(mac) for mac in args.mac):
                     get_google_image(fp.get_path(), fp.mac)
 
         if not args.correlation and not args.path and not args.image:
             for fp in btle:
-                if True in [fp.has_mac(mac) for mac in args.mac]:
+                if any(fp.has_mac(mac) for mac in args.mac):
                     print('===== CORRELATION=====')
                     print(fp.get_chain())
     else:
