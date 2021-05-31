@@ -312,18 +312,7 @@ def resolve_hops(fingerprints: list) -> None:
         for fingerprint in rest:
             fingerprint.is_hopped = True
     
-'''def get_google_image(path: list) -> None:
-    url_start = r'http://maps.googleapis.com/maps/api/staticmap?&size=1200x1200&path=color:0xff0000|weight:2|'
-    api_key = 'AIzaSyBpMqQzkJbJF7kga0B2ucvY2J8NOOvWhqc'
-
-    path_string = '|'.join(f'{path[i][0]},{path[i][1]}' for i in range(0, len(path), ceil(len(path)/100)))
-
-    url = f'{url_start}{path_string}&key={api_key}\n'
-    print(url)'''
-
-def get_google_image(path: list) -> None:
-    print(path[0][0])
-    print(path[0][1])
+def get_google_image(path: list, mac: str=None) -> None:
     url_start = f'http://maps.googleapis.com/maps/api/staticmap?&size=1200x1200&markers=color:green|{path[0][0]},{path[0][1]}&markers=color:red|{path[-1][0]},{path[-1][1]}&path=color:0xff0000|weight:2|'
     api_key = 'AIzaSyBpMqQzkJbJF7kga0B2ucvY2J8NOOvWhqc'
 
@@ -332,7 +321,8 @@ def get_google_image(path: list) -> None:
     url = f'{url_start}enc:{encoded}&key={api_key}\n'
 
     try:
-        fig = plt.figure()
+        plt.axis('off')
+        plt.title(f'Path{" of "+mac if mac else ""}')
         img = PIL.Image.open(urllib.request.urlopen(url))
         plt.imshow(img)
         plt.show()
@@ -395,13 +385,13 @@ if __name__ == '__main__':
                         help='Mac addresses for which to display information.\n If none of -c, -p, -i are specified, print correlation.')
 
     parser.add_argument('-c', '--correlation', action='count',
-                        help='Print correlation of device. Must be used with -m.')   
+                        help='Print correlation of device. Specify device with -m.')   
 
     parser.add_argument('-p', '--path', action='count',
-                        help='Print path of device. Must be used with -m.')
+                        help='Print path of device. Specify device with -m.')
 
     parser.add_argument('-i', '--image', action='count',
-                        help='Create image of path of device. Specify  -m.')
+                        help='Create image of path of device. Specify device with -m.')
 
     args = parser.parse_args()
 
@@ -431,23 +421,21 @@ if __name__ == '__main__':
                 if True in [fp.has_mac(mac) for mac in args.mac]:
                     print('===== CORRELATION=====')
                     print(fp.get_chain())
-        elif args.path:
+
+        if args.path:
             for fp in btle:
                 if True in [fp.has_mac(mac) for mac in args.mac]:
                     print('===== PATH =====')
                     print(fp.get_path())
-        elif args.image:
+        if args.image:
             for fp in btle:
                 if True in [fp.has_mac(mac) for mac in args.mac]:
-                    print('===== IMAGE URL =====')
-                    get_google_image(fp.get_path())
-        else:
+                    get_google_image(fp.get_path(), fp.mac)
+
+        if not args.correlation and not args.path and not args.image:
             for fp in btle:
                 if True in [fp.has_mac(mac) for mac in args.mac]:
                     print('===== CORRELATION=====')
                     print(fp.get_chain())
-
-    #path = btle[1].get_path()
-    #get_google_image(path)
-    
-
+    else:
+        parser.print_help()
