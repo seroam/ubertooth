@@ -177,6 +177,16 @@ class BtleAdvDevice:
         return f'{datetime.utcfromtimestamp(self.head.first_seen)} - '\
                f'{datetime.utcfromtimestamp(self.tail.last_seen)}'
 
+    def is_type(self, type: str):
+        if type=='any':
+            return True
+        elif type == 'covid':
+            return self.head.service_uuid == 0xfd6f
+        elif type == 'apple':
+            return self.head.company_id == 0x4c
+        else:
+            raise ValueError(f'Invalid type "{type}"')
+
     def has_any_of_macs(self, macs: Iterable):
         return not set(self.macs).isdisjoint(set(macs))
 
@@ -410,10 +420,6 @@ def process_btle_adv(*, delta_max: int=5):
 
     return [BtleAdvDevice(fp) for fp in fingerprints if not fp.is_successor and not fp.is_hopped]
 
-
-            
-
-
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Bluetooth Signal Correlator')
@@ -424,7 +430,7 @@ if __name__ == '__main__':
     parser.add_argument('-a', '--all', action='count',
                         help='Correlate all database entries and print result.')
 
-    parser.add_argument('-m ', '--mac', nargs='*',
+    parser.add_argument('-m ', '--mac', nargs='+',
                         help='Mac addresses for which to display information.\n If none of -c, -p, -i are specified, print correlation.')
 
     parser.add_argument('-c', '--correlation', action='count',
@@ -435,6 +441,9 @@ if __name__ == '__main__':
 
     parser.add_argument('-i', '--image', action='count',
                         help='Create image of path of device. Specify device with -m.')
+
+    parser.add_argument('-t', '--type', default='any',
+                        help='Disply only devices of specified type. Options are: covid, apple.')
 
     args = parser.parse_args()
 
@@ -461,27 +470,32 @@ if __name__ == '__main__':
 
         if args.correlation:
             for device in btle_devices:
-                if device.has_any_of_macs(args.mac):
+                if device.has_any_of_macs(args.mac) and device.is_type(args.type):
                     print('===== CORRELATION=====')
                     print(device.time_frame)
                     print(device.chain)
 
         if args.path:
             for device in btle_devices:
-                if device.has_any_of_macs(args.mac):
+                if device.has_any_of_macs(args.mac) and device.is_type(args.type):
                     print('===== PATH =====')
                     print(device.time_frame)
                     print(device.path)
         if args.image:
             for device in btle_devices:
-                if device.has_any_of_macs(args.mac):
+                if device.has_any_of_macs(args.mac) and device.is_type(args.type):
                     get_google_image(device.path, f'{device.macs_str}\n{device.time_frame}')
 
         if not args.correlation and not args.path and not args.image:
             for device in btle_devices:
-                if device.has_any_of_macs(args.mac):
+                if device.has_any_of_macs(args.mac) and device.is_type(args.type):
                     print('===== CORRELATION=====')
                     print(device.time_frame)
                     print(device.chain)
+    elif args.type:
+        for device in btle_devices:
+            if device.is_type(args.type):
+                print(device.time_frame)
+                print(device.chain)
     else:
         parser.print_help()
