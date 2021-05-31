@@ -2,9 +2,6 @@ import pytest
 import sqlite3
 import correlator
 import os
-from matplotlib import pyplot as plt
-
-db_file = 'test.db'
 
 @pytest.fixture(autouse=True)
 def create_db():
@@ -50,7 +47,9 @@ def add_antenna_rows(db_file: str,  values: list):
 
 
 @pytest.fixture(scope="session", autouse=True)
-def instantiate_db_reader():
+def instantiate_db_reader(tmpdir_factory):
+    global db_file
+    db_file = tmpdir_factory.mktemp('db').join('test.db')
     correlator.DbReader(db_file)
 
 
@@ -209,7 +208,7 @@ class TestIsSame:
 
 class TestHopping:
    
-    def test_with_time_gap_are_connected(self, tmpdir):
+    def test_with_time_gap_are_connected(self):
 
         signals = [('51:83:68:fd:f5:ef', '-78', '2.31810188293457', '-75.4092025756836', '1621775133', '1621775386', '64879', '65535', '1', '1'),
                    ('51:83:68:fd:f5:ef', '-86', '2.62029695510864', '-75.0869598388672', '1621775402', '1621775559', '64879', '65535', '1', '2')]
@@ -227,7 +226,7 @@ class TestHopping:
         assert(set(fingerprints) == set(components[0]))
         assert(len(components[0]) == 2)
 
-    def test_without_time_gap_are_connected(self, tmpdir):
+    def test_without_time_gap_are_connected(self):
 
         signals = [('51:83:68:fd:f5:ef', '-78', '2.31810188293457', '-75.4092025756836', '1621775133', '1621775386', '64879', '65535', '1', '1'),
                    ('51:83:68:fd:f5:ef', '-86', '2.62029695510864', '-75.0869598388672', '1621775386', '1621775559', '64879', '65535', '1', '2')]
@@ -245,7 +244,7 @@ class TestHopping:
         assert set(fingerprints) == set(components[0]), 'Incorrect nodes in component'
         assert len(components[0]) == 2, 'Incorrect number of nodes in component'
 
-    def test_overlapping_time_are_connected(self, tmpdir):
+    def test_overlapping_time_are_connected(self):
 
         signals = [('51:83:68:fd:f5:ef', '-78', '2.31810188293457', '-75.4092025756836', '1621775133', '1621775386', '64879', '65535', '1', '1'),
                    ('51:83:68:fd:f5:ef', '-86', '2.62029695510864', '-75.0869598388672', '1621775376', '1621775559', '64879', '65535', '1', '2')]
@@ -263,7 +262,7 @@ class TestHopping:
         assert set(fingerprints) == set(components[0]), 'Incorrect nodes in component'
         assert len(components[0]) == 2, 'Incorrect number of nodes in component'
 
-    def test_contained_time_are_connected(self, tmpdir):
+    def test_contained_time_are_connected(self):
 
         signals = [('51:83:68:fd:f5:ef', '-78', '2.31810188293457', '-75.4092025756836', '1621775133', '1621775386', '64879', '65535', '1', '1'),
                    ('51:83:68:fd:f5:ef', '-86', '2.62029695510864', '-75.0869598388672', '1621775276', '1621775300', '64879', '65535', '1', '2')]
@@ -281,7 +280,7 @@ class TestHopping:
         assert set(fingerprints) == set(components[0]), 'Incorrect nodes in component'
         assert len(components[0]) == 2, 'Incorrect number of nodes in component'
 
-    def test_two_components_two_nodes_each(self, tmpdir):
+    def test_two_components_two_nodes_each(self):
 
         signals = [('51:83:68:fd:f5:ef', '-78', '2.31810188293457', '-75.4092025756836', '1621775133', '1621775386', '64879', '65535', '1', '1'),
                    ('51:83:68:fd:f5:ef', '-86', '2.62029695510864', '-75.0869598388672', '1621775276', '1621775300', '64879', '65535', '1', '2'),
@@ -306,7 +305,7 @@ class TestHopping:
         assert set(fingerprints[2:]) == set(components[1]), 'Incorrect nodes in component'
         assert len(components[1]) == 2, 'Incorrect number of nodes in component'
 
-    def test_two_components(self, tmpdir):
+    def test_two_components(self):
 
         signals = [('51:83:68:fd:f5:ef', '-78', '2.31810188293457', '-75.4092025756836', '1621775133', '1621775386', '64879', '65535', '1', '1'),
                    ('51:83:68:fd:f5:ef', '-86', '2.62029695510864', '-75.0869598388672', '1621775276', '1621775300', '64879', '65535', '1', '2'),
@@ -334,7 +333,7 @@ class TestHopping:
         assert set(fingerprints[2:]) == set(components[1]), 'Incorrect nodes in component'
         assert len(components[1]) == 3, 'Incorrect number of nodes in component'
 
-    def test_three_components(self, tmpdir):
+    def test_three_components(self):
 
         signals = [('51:83:68:fd:f5:ef', '-78', '2.31810188293457', '-75.4092025756836', '1621775133', '1621775386', '64879', '65535', '1', '1'),
                    ('51:83:68:fd:f5:ef', '-86', '2.62029695510864', '-75.0869598388672', '1621775276', '1621775300', '64879', '65535', '1', '2'),
@@ -461,7 +460,9 @@ class TestHopping:
         actual = paths[1]
         assert(actual == expected), 'Path recognized incorrectly'
 
-    def test_irrelevant_nodes_skipped(self, tmpdir):
+    def test_irrelevant_nodes_skipped(self):
+
+        print(db_file)
 
         signals = [('51:83:68:fd:f5:ef', '-78', '2.31810188293457', '-75.4092025756836', '1621777133', '1621777386', '64879', '65535', '1', '1'),
                    ('51:83:68:fd:f5:ef', '-86', '2.62029695510864', '-75.0869598388672', '1621777276', '1621777500', '64879', '65535', '1', '2'),
