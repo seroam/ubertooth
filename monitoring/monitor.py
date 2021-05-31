@@ -98,7 +98,7 @@ def create_sniffers(modes: list):
 
     for i, mode in enumerate(modes):
         if mode == 'btbr':
-            sniffers.append(Sniffer(processor=BtbrProcessor(callback=report_btbr_result, ut_id=i)))
+            sniffers.append(Sniffer(processor=BtbrProcessor(callback=report_btbr_result, seen_for=60, ut_id=i)))
         elif mode == 'btle':
             sniffers.append(Sniffer(processor=BtleProcessor(callback=report_btle_result, ut_id=i)))
         elif mode == 'btle-adv':

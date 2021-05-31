@@ -6,15 +6,17 @@ from os.path import isfile
 import bisect
 from collections import defaultdict
 from math import asin, sqrt, sin, cos, radians
-from typing import Generator
+from typing import Generator, Iterable
 import itertools
 import argparse
 import urllib
 import polyline
 import PIL
 import requests
+from datetime import datetime
 import matplotlib.pyplot as plt
 import networkx as nx
+from SortedSet.sorted_set import SortedSet
 from secrets import google_api_key
 
 def haversine(a: tuple, b: tuple) -> float:
@@ -151,6 +153,48 @@ class BtleAdvFingerprint:
 
     def __eq__(self, other) -> bool:
         return not (self < other or self > other)
+
+class BtleAdvDevice:
+    def __init__(self, first: BtleAdvFingerprint):
+        self.head = first
+        self.tail = None
+        self.macs = self._get_macs()
+
+    @property
+    def chain(self):
+        return self.head.get_chain()
+
+    @property
+    def path(self):
+        return self.head.get_path()
+
+    @property
+    def macs_str(self):
+        return ' -> '.join(mac for mac in self.macs)
+
+    @property
+    def time_frame(self):
+        return f'{datetime.utcfromtimestamp(self.head.first_seen)} - '\
+               f'{datetime.utcfromtimestamp(self.tail.last_seen)}'
+
+    def has_any_of_macs(self, macs: Iterable):
+        return not set(self.macs).isdisjoint(set(macs))
+
+    def _get_macs(self):
+
+        macs = list()
+        fingerprint = self.head
+        while True:
+            macs.append(fingerprint.mac)
+            if fingerprint.antenna_hop:
+                fingerprint = fingerprint.antenna_hop
+            elif fingerprint.successors:
+                fingerprint = fingerprint.successors[0]
+            else:
+                self.tail = fingerprint
+                break
+
+        return macs
 
 class DbReader:
 
@@ -364,7 +408,11 @@ def process_btle_adv(*, delta_max: int=5):
         if len(occurrences) > 1:
             resolve_hops(occurrences)
 
-    return [fp for fp in fingerprints if not fp.is_successor and not fp.is_hopped]
+    return [BtleAdvDevice(fp) for fp in fingerprints if not fp.is_successor and not fp.is_hopped]
+
+
+            
+
 
 if __name__ == '__main__':
 
@@ -403,34 +451,37 @@ if __name__ == '__main__':
 
     DbReader(db_file)
 
-    btle = process_btle_adv()
-
+    btle_devices = process_btle_adv()
 
     if args.all:
-        for fp in btle:
-            print(fp.get_chain())
+        for device in btle_devices:
+            print(device.time_frame)
+            print(device.chain)
     elif args.mac:
 
         if args.correlation:
-            for fp in btle:
-                if any(fp.has_mac(mac) for mac in args.mac):
+            for device in btle_devices:
+                if device.has_any_of_macs(args.mac):
                     print('===== CORRELATION=====')
-                    print(fp.get_chain())
+                    print(device.time_frame)
+                    print(device.chain)
 
         if args.path:
-            for fp in btle:
-                if any(fp.has_mac(mac) for mac in args.mac):
+            for device in btle_devices:
+                if device.has_any_of_macs(args.mac):
                     print('===== PATH =====')
-                    print(fp.get_path())
+                    print(device.time_frame)
+                    print(device.path)
         if args.image:
-            for fp in btle:
-                if any(fp.has_mac(mac) for mac in args.mac):
-                    get_google_image(fp.get_path(), fp.mac)
+            for device in btle_devices:
+                if device.has_any_of_macs(args.mac):
+                    get_google_image(device.path, f'{device.macs_str}\n{device.time_frame}')
 
         if not args.correlation and not args.path and not args.image:
-            for fp in btle:
-                if any(fp.has_mac(mac) for mac in args.mac):
+            for device in btle_devices:
+                if device.has_any_of_macs(args.mac):
                     print('===== CORRELATION=====')
-                    print(fp.get_chain())
+                    print(device.time_frame)
+                    print(device.chain)
     else:
         parser.print_help()

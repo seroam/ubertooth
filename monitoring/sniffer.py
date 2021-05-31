@@ -175,7 +175,7 @@ class BtleAdvProcessor(Processor):
     _Packet = namedtuple('Packet', ['type', 'random', 'mac', 'timestamp', 'rssi', 'service_uuid', 'company_id'])
 
 
-    def __init__(self, *, pipe_path='', callback=None, ut_id=0, seen_for=30):
+    def __init__(self, *, pipe_path='', callback=None, ut_id=0, seen_for=60):
         Processor.__init__(self, pipe_path=pipe_path, callback=callback, ut_id=ut_id)
         self.cmd = f'ubertooth-btle -M {self._pipe} -U {ut_id}'.split(' ')
         self._fingerprints = defaultdict(BtleAdvFingerprint)
@@ -296,11 +296,12 @@ class BtbrProcessor(Processor):
     _fmt = 'HBII'
     _Packet = namedtuple('Packet', ['flags', 'uap', 'lap', 'timestamp'])
 
-    def __init__(self, *, pipe_path='', callback: Callable=None, ut_id=0):
+    def __init__(self, *, pipe_path='', callback: Callable=None, ut_id: int=0, seen_for: int=60):
         Processor.__init__(self, pipe_path=pipe_path, ut_id=ut_id)
         self.cmd = f'ubertooth-rx -m {self._pipe} -U {ut_id}'.split(' ')
         self._fingerprints = defaultdict(BtbrFingerprint)
         self._callback = callback
+        self.seen_for = seen_for
 
     def start(self):
         self._running = True
@@ -339,7 +340,9 @@ class BtbrProcessor(Processor):
 
             self._last_reported = now
 
-            return list(self._fingerprints.values())
+            return [ value
+                    for value in self._fingerprints.values()
+                    if value.last_seen-value.first_seen > self.seen_for]
 
     def __str__(self):
         with self._lock:
