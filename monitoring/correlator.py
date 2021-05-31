@@ -15,6 +15,7 @@ import PIL
 import requests
 import matplotlib.pyplot as plt
 import networkx as nx
+from secrets import google_api_key
 
 def haversine(a: tuple, b: tuple) -> float:
     '''Haversine equations to calculate distance on sphere'''
@@ -314,11 +315,10 @@ def resolve_hops(fingerprints: list) -> None:
 
 def get_google_image(path: list, mac: str=None) -> None:
     url_start = f'http://maps.googleapis.com/maps/api/staticmap?&size=1200x1200&markers=color:green|{path[0][0]},{path[0][1]}&markers=color:red|{path[-1][0]},{path[-1][1]}&path=color:0xff0000|weight:2|'
-    api_key = 'AIzaSyBpMqQzkJbJF7kga0B2ucvY2J8NOOvWhqc'
 
     encoded = polyline.encode(path)
 
-    url = f'{url_start}enc:{encoded}&key={api_key}\n'
+    url = f'{url_start}enc:{encoded}&key={google_api_key}\n'
 
     plt.axis('off')
     plt.title(f'Path{" of "+mac if mac else ""}')
