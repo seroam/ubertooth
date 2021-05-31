@@ -7,15 +7,19 @@ import sys
 from os.path import isfile
 import bisect
 from collections import namedtuple, defaultdict
-from math import asin, sqrt, sin, cos, radians
+from math import asin, sqrt, sin, cos, radians, ceil
 from typing import Generator
 import networkx as nx
 import itertools
 import matplotlib.pyplot as plt
-import random
+import argparse
+import polyline
+import requests
+import matplotlib.image as mpimg
+import PIL
+import urllib
 
-
-def haversine(a: tuple, b: tuple):
+def haversine(a: tuple, b: tuple) -> float:
     '''Haversine equations to calculate distance on sphere'''
     earth_radius = 6371.0088
 
@@ -28,7 +32,7 @@ def haversine(a: tuple, b: tuple):
 
     return 2 * earth_radius * asin(sqrt(d))
 
-def antenna_distance(id1: int, t1: int, id2: int, t2: int=None):
+def antenna_distance(id1: int, t1: int, id2: int, t2: int=None) -> float:
     if t2 is None:
         t2 = t1
 
@@ -52,11 +56,12 @@ class BtleAdvFingerprint:
         self.is_successor = False
         self.successors = list()
         self.is_hopped = False
-        self.antenna_hop = list()
+        self.antenna_hop = None
 
     def get_chain(self, *, indent: int=0) -> str:
         return f'{" "*indent}{self.mac}\n'+ \
-            '\n'.join(successor.get_chain(indent=indent+2) for successor in self.successors)
+            (f'*{self.antenna_hop.get_chain(indent=indent)}' if self.antenna_hop else \
+                '\n'.join(successor.get_chain(indent=indent+2) for successor in self.successors))
 
     def add_candidates(self, candidates: list, *, max_candidates: int=2, candidates_limit: int=5) -> None:
         '''Filters, sorts and adds a list of candidates to the successors list\n
@@ -101,8 +106,22 @@ class BtleAdvFingerprint:
                self.service_uuid == candidate.service_uuid and \
                antenna_distance(self.antenna, self.last_seen, candidate.antenna, candidate.first_seen) <= max_distance_diff
 
-    def add_hopped(self, other) -> None:
-        raise NotImplementedError("add_hopped not yet implemented.")
+    def get_path(self, path: list=list(), earliest: int=None) -> list:
+        start = earliest if earliest and earliest > self.first_seen else self.first_seen
+
+        path += DbReader.get_antenna_path(antenna=self.antenna, start=start, end=self.last_seen)
+        
+        if self.antenna_hop:
+            self.antenna_hop.get_path(path, self.last_seen)
+        elif self.successors:
+            self.successors[0].get_path(path, self.last_seen)
+
+        return path
+
+    def has_mac(self, mac: str) -> bool:
+        return self.mac == mac or \
+            (self.antenna_hop.has_mac(mac) if self.antenna_hop else False) or \
+            (True in [fp.has_mac(mac) for fp in self.successors])
 
     def __str__(self) -> str:
         return ', '.join(f'{k}={v}' for k, v in self.__dict__.items())
@@ -149,12 +168,12 @@ class DbReader:
             raise Exception("Attempting to instance a singleton class.")
 
     @staticmethod
-    def set_db_file(db_file: str):
+    def set_db_file(db_file: str) -> None:
         DbReader.__db_file = db_file
 
     @staticmethod
     def get_antenna_path(*, antenna: int, start: int=0, end: int=sys.maxsize) -> list:
-        statement = f"SELECT Longitude, Latitude, Timestamp FROM Metadata WHERE AntennaId == {antenna} AND Timestamp BETWEEN {start} AND {end}"
+        statement = f"SELECT Latitude, Longitude FROM Metadata WHERE AntennaId == {antenna} AND Timestamp BETWEEN {start} AND {end}"
         return DbReader._execute(statement)
 
     @staticmethod
@@ -167,14 +186,14 @@ class DbReader:
         return location[0]
 
     @staticmethod
-    def get_mac_rows(*, start: int = 0, end: int = sys.maxsize):
+    def get_mac_rows(*, start: int = 0, end: int = sys.maxsize) -> list:
         statement = 'SELECT * FROM MacAddresses ORDER BY FirstSeen'
         rows = DbReader._execute_lazy(statement)
 
         return [BtleAdvFingerprint(*row[1:]) for row in rows]
 
     @staticmethod
-    def get_all_macs():
+    def get_all_macs() -> list:
         data = dict()
         
         for antenna in DbReader._execute_lazy('SELECT DISTINCT AntennaId FROM MacAddresses'):
@@ -201,7 +220,7 @@ class DbReader:
             for row in cur.execute(statement):
                 yield row
 
-def is_same(old: BtleAdvFingerprint, new: BtleAdvFingerprint, *, max_distance: int=15):
+def is_same(old: BtleAdvFingerprint, new: BtleAdvFingerprint, *, max_distance: int=15) -> bool:
     ''' Checks for two BtleAdvFingerprints old, new if new could be the same as old by\n
      - checking if new appeared in the time span (old.first_seen, old.lastseen+15m)\n
      - checking if service_uuid and company_id match\n
@@ -278,10 +297,50 @@ def get_paths(fingerprints: list) -> tuple:
 
     return paths, unused
 
-def resolve_hops(fingerprints: list):
+def resolve_hops(fingerprints: list) -> None:
     paths, unused = get_paths(fingerprints)
 
+    for path in paths:
+        len_path = len(path)
+        for index, fingerprint in enumerate(path):
+            if index != 0:
+                fingerprint.is_hopped = True
+            if index < len_path-1:
+                fingerprint.antenna_hop = path[index+1]
+        
+    for rest in unused:
+        for fingerprint in rest:
+            fingerprint.is_hopped = True
     
+'''def get_google_image(path: list) -> None:
+    url_start = r'http://maps.googleapis.com/maps/api/staticmap?&size=1200x1200&path=color:0xff0000|weight:2|'
+    api_key = 'AIzaSyBpMqQzkJbJF7kga0B2ucvY2J8NOOvWhqc'
+
+    path_string = '|'.join(f'{path[i][0]},{path[i][1]}' for i in range(0, len(path), ceil(len(path)/100)))
+
+    url = f'{url_start}{path_string}&key={api_key}\n'
+    print(url)'''
+
+def get_google_image(path: list) -> None:
+    print(path[0][0])
+    print(path[0][1])
+    url_start = f'http://maps.googleapis.com/maps/api/staticmap?&size=1200x1200&markers=color:green|{path[0][0]},{path[0][1]}&markers=color:red|{path[-1][0]},{path[-1][1]}&path=color:0xff0000|weight:2|'
+    api_key = 'AIzaSyBpMqQzkJbJF7kga0B2ucvY2J8NOOvWhqc'
+
+    encoded = polyline.encode(path)
+    
+    url = f'{url_start}enc:{encoded}&key={api_key}\n'
+
+    try:
+        fig = plt.figure()
+        img = PIL.Image.open(urllib.request.urlopen(url))
+        plt.imshow(img)
+        plt.show()
+    except:
+        print("Unable to download the image. Please open it manually:")
+        print(url)
+
+
 
 def process_btle_adv(*, delta_max: int=5, max_candidates: int=2):
 
@@ -312,14 +371,11 @@ def process_btle_adv(*, delta_max: int=5, max_candidates: int=2):
 
         fingerprint.add_candidates(candidates)
 
-    # Determine hops
     for occurrences in record.values():
         if len(occurrences) > 1:
             resolve_hops(occurrences)
-            
-    for fingerprint in fingerprints:
-        if not fingerprint.is_successor:
-            pass#print(fingerprint.get_chain())
+
+    return [fp for fp in fingerprints if not fp.is_successor and not fp.is_hopped]
 
 def usage():
     print(f"Usage: {sys.argv[0]} path_to_db_file")
@@ -327,22 +383,71 @@ def usage():
 
 if __name__ == '__main__':
 
-    dbfile: str
+    parser = argparse.ArgumentParser(description='Bluetooth Signal Correlator')
 
-    if len(sys.argv) != 2:
-        if isfile('bluetooth.db'):
-            db_file = 'bluetooth.db'
-        else:
-            usage()
+    parser.add_argument('db_file', metavar='db_file', type=str, nargs='?',
+                        help='The database file to parse.')
 
-    if not db_file:
-        db_file = sys.argv[1]
-    
+    parser.add_argument('-a', '--all', action='count',
+                        help='Correlate all database entries and print result.')
+
+    parser.add_argument('-m ', '--mac', nargs='*',
+                        help='Mac addresses for which to display information.\n If none of -c, -p, -i are specified, print correlation.')
+
+    parser.add_argument('-c', '--correlation', action='count',
+                        help='Print correlation of device. Must be used with -m.')   
+
+    parser.add_argument('-p', '--path', action='count',
+                        help='Print path of device. Must be used with -m.')
+
+    parser.add_argument('-i', '--image', action='count',
+                        help='Create image of path of device. Specify  -m.')
+
+    args = parser.parse_args()
+
+    if (args.correlation or args.path or args.image) and not args.mac:
+        print(f'Options -c, -p, -i must be used with -m.')
+        parser.print_help()
+        sys.exit(0)
+
+    db_file = args.db_file if args.db_file else 'bluetooth.db'
     if not isfile(db_file):
-        print(f"Invalid database file: {db_file}")
+        print(f'Database file "{db_file}" does not exist.', file=sys.stderr)
+        parser.print_help()
+        sys.exit(0)
 
     DbReader(db_file)
 
-    process_btle_adv()
+    btle = process_btle_adv()
+
+
+    if args.all:
+        for fp in btle:
+            print(fp.get_chain())
+    elif args.mac:
+        
+        if args.correlation:
+            for fp in btle:
+                if True in [fp.has_mac(mac) for mac in args.mac]:
+                    print('===== CORRELATION=====')
+                    print(fp.get_chain())
+        elif args.path:
+            for fp in btle:
+                if True in [fp.has_mac(mac) for mac in args.mac]:
+                    print('===== PATH =====')
+                    print(fp.get_path())
+        elif args.image:
+            for fp in btle:
+                if True in [fp.has_mac(mac) for mac in args.mac]:
+                    print('===== IMAGE URL =====')
+                    get_google_image(fp.get_path())
+        else:
+            for fp in btle:
+                if True in [fp.has_mac(mac) for mac in args.mac]:
+                    print('===== CORRELATION=====')
+                    print(fp.get_chain())
+
+    #path = btle[1].get_path()
+    #get_google_image(path)
     
 
